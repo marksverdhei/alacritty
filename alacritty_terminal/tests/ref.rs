@@ -1,4 +1,4 @@
-#![cfg(feature = "serde")]
+#![cfg(all(feature = "serde", not(target_arch = "wasm32")))]
 use serde::Deserialize;
 use serde_json as json;
 
