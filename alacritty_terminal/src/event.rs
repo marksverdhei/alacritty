@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{self, Debug, Formatter};
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::ExitStatus;
 use std::sync::Arc;
 
@@ -55,6 +56,7 @@ pub enum Event {
     Exit,
 
     /// Child process exited.
+    #[cfg(not(target_arch = "wasm32"))]
     ChildExit(ExitStatus),
 }
 
@@ -73,6 +75,7 @@ impl Debug for Event {
             Event::Wakeup => write!(f, "Wakeup"),
             Event::Bell => write!(f, "Bell"),
             Event::Exit => write!(f, "Exit"),
+            #[cfg(not(target_arch = "wasm32"))]
             Event::ChildExit(status) => write!(f, "ChildExit({status:?})"),
         }
     }

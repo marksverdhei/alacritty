@@ -2,20 +2,25 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::ExitStatus;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
 use std::{env, io};
 
+#[cfg(not(target_arch = "wasm32"))]
 use polling::{Event, PollMode, Poller};
 
-#[cfg(not(windows))]
+#[cfg(all(not(target_arch = "wasm32"), not(windows)))]
 mod unix;
-#[cfg(not(windows))]
+#[cfg(all(not(target_arch = "wasm32"), not(windows)))]
 pub use self::unix::*;
 
-#[cfg(windows)]
+#[cfg(all(not(target_arch = "wasm32"), windows))]
 pub mod windows;
-#[cfg(windows)]
+#[cfg(all(not(target_arch = "wasm32"), windows))]
 pub use self::windows::*;
 
 /// Configuration for the `Pty` interface.
@@ -62,6 +67,7 @@ impl Shell {
 ///
 /// This defines an abstraction over polling's interface in order to allow either
 /// one read/write object or a separate read and write object.
+#[cfg(not(target_arch = "wasm32"))]
 pub trait EventedReadWrite {
     type Reader: io::Read;
     type Writer: io::Write;
@@ -78,6 +84,7 @@ pub trait EventedReadWrite {
 }
 
 /// Events concerning TTY child processes.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChildEvent {
     /// Indicates the child has exited.
@@ -89,6 +96,7 @@ pub enum ChildEvent {
 /// This is a refinement of EventedReadWrite that also provides a channel through which we can be
 /// notified if the PTY child process does something we care about (other than writing to the TTY).
 /// In particular, this allows for race-free child exit notification on UNIX (cf. `SIGCHLD`).
+#[cfg(not(target_arch = "wasm32"))]
 pub trait EventedPty: EventedReadWrite {
     /// Tries to retrieve an event.
     ///
@@ -97,6 +105,7 @@ pub trait EventedPty: EventedReadWrite {
 }
 
 /// Setup environment variables.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn setup_env() {
     // Default to 'alacritty' terminfo if it is available, otherwise
     // default to 'xterm-256color'. May be overridden by user's config
@@ -109,6 +118,7 @@ pub fn setup_env() {
 }
 
 /// Check if a terminfo entry exists on the system.
+#[cfg(not(target_arch = "wasm32"))]
 fn terminfo_exists(terminfo: &str) -> bool {
     // Get first terminfo character for the parent directory.
     let first = terminfo.get(..1).unwrap_or_default();
