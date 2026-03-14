@@ -7,6 +7,13 @@ members = [
     "alacritty_pty_server",
     "alacritty_web",
 ]
+default-members = [
+    "alacritty",
+    "alacritty_terminal",
+    "alacritty_config",
+    "alacritty_config_derive",
+    "alacritty_pty_server",
+]
 resolver = "2"
 
 [workspace.package]

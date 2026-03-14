@@ -198,7 +198,9 @@ impl GlyphCache {
 
         // Clear and draw.
         ctx.clear_rect(0.0, 0.0, glyph_w as f64, glyph_h as f64);
-        let _ = ctx.fill_text(&ch, 0.0, 0.0);
+        if let Err(e) = ctx.fill_text(&ch, 0.0, 0.0) {
+            log::error!("Glyph cache fill_text failed: {e:?}");
+        }
 
         // Read pixel data.
         let image_data = ctx

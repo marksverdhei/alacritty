@@ -10,6 +10,12 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
+/// Font configuration for the terminal renderer, matching `FontConfig` in `canvas2d.rs`.
+///
+/// All fields have sensible defaults so the struct can be constructed with just
+/// `FontConfig::default()`.
+pub use renderer::canvas2d::FontConfig;
+
 /// Initialize panic hook and logger for better WASM debugging.
 fn init_wasm() {
     console_error_panic_hook::set_once();
@@ -76,11 +82,16 @@ impl AlacrittyTerminal {
 
     /// Connect to a WebSocket PTY server.
     pub fn connect(&mut self, ws_url: &str) -> Result<(), JsError> {
-        // WebSocket data goes into the queue, not directly into the terminal.
         let queue = self.incoming_data.clone();
-        let ws = websocket::WsConnection::new(ws_url, move |data| {
-            queue.borrow_mut().push(data.to_vec());
-        })?;
+        let ws = websocket::WsConnection::new(
+            ws_url,
+            || {
+                log::info!("WebSocket connection ready");
+            },
+            move |data| {
+                queue.borrow_mut().push(data.to_vec());
+            },
+        )?;
         self.ws = Some(ws);
         Ok(())
     }
@@ -114,6 +125,27 @@ impl AlacrittyTerminal {
     /// Get cell height in pixels.
     pub fn cell_height(&self) -> f32 {
         self.state.borrow().renderer.cell_height()
+    }
+
+    /// Set the font size in pixels and trigger a re-render.
+    pub fn set_font_size(&self, size_px: f32) {
+        let mut app = self.state.borrow_mut();
+        app.renderer.set_font_size(size_px);
+        app.dirty = true;
+    }
+
+    /// Set the font family and trigger a re-render.
+    pub fn set_font_family(&self, family: &str) {
+        let mut app = self.state.borrow_mut();
+        app.renderer.set_font_family(family);
+        app.dirty = true;
+    }
+
+    /// Set the line height multiplier and trigger a re-render.
+    pub fn set_line_height_multiplier(&self, multiplier: f32) {
+        let mut app = self.state.borrow_mut();
+        app.renderer.set_line_height_multiplier(multiplier);
+        app.dirty = true;
     }
 
     /// Clean up resources.

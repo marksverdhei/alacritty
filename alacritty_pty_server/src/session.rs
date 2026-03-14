@@ -13,6 +13,27 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use crate::Args;
 use crate::protocol::{self, ClientMessage};
 
+/// Check whether the Origin header is allowed based on the configured allowed origins.
+/// If no allowed origins are configured, only requests without an Origin header are accepted
+/// (same-origin policy).
+fn is_origin_allowed(origin: Option<&http::HeaderValue>, allowed_origins: &[String]) -> bool {
+    match origin {
+        None => {
+            // No Origin header means same-origin; always allowed.
+            true
+        }
+        Some(origin_value) => {
+            if allowed_origins.is_empty() {
+                // No allowed origins configured: reject cross-origin requests.
+                false
+            } else {
+                let origin_str = origin_value.to_str().unwrap_or("");
+                allowed_origins.iter().any(|allowed| allowed == origin_str)
+            }
+        }
+    }
+}
+
 /// Handle a single TCP connection: upgrade to WebSocket, optionally authenticate,
 /// spawn a PTY, and bridge I/O.
 pub async fn handle_connection(
@@ -20,17 +41,39 @@ pub async fn handle_connection(
     peer: SocketAddr,
     args: Arc<Args>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // WebSocket upgrade with CORS headers.
-    let ws_stream = tokio_tungstenite::accept_hdr_async(stream, |req: &Request, mut resp: Response| {
-        // Add CORS header for the demo website.
-        resp.headers_mut().insert(
-            http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            http::HeaderValue::from_static("*"),
-        );
-        let _ = req;
-        Ok(resp)
-    })
-    .await?;
+    let allowed_origins = args.allowed_origins.clone();
+
+    // WebSocket upgrade with origin validation.
+    let ws_stream =
+        tokio_tungstenite::accept_hdr_async(stream, |req: &Request, mut resp: Response| {
+            let origin = req.headers().get(http::header::ORIGIN);
+
+            if !is_origin_allowed(origin, &allowed_origins) {
+                let origin_str = origin
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("<unknown>");
+                warn!(
+                    "Rejected connection from {}: origin '{}' not allowed",
+                    peer, origin_str
+                );
+                *resp.status_mut() = http::StatusCode::FORBIDDEN;
+                return Err(http::Response::builder()
+                    .status(http::StatusCode::FORBIDDEN)
+                    .body(Some("Origin not allowed".to_string()))
+                    .unwrap());
+            }
+
+            // If origin is allowed and present, echo it back in CORS header.
+            if let Some(origin_value) = origin {
+                resp.headers_mut().insert(
+                    http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                    origin_value.clone(),
+                );
+            }
+
+            Ok(resp)
+        })
+        .await?;
 
     info!("WebSocket connection established with {}", peer);
 
@@ -43,18 +86,27 @@ pub async fn handle_connection(
             Some(Ok(Message::Text(token))) => {
                 if token.trim() != expected_token.as_str() {
                     warn!("Auth failed from {}: invalid token", peer);
-                    let _ = ws_sink
-                        .send(Message::Close(None))
-                        .await;
+                    if let Err(e) = ws_sink.send(Message::Close(None)).await {
+                        warn!(
+                            "Failed to send close after auth failure to {}: {}",
+                            peer, e
+                        );
+                    }
                     return Ok(());
                 }
                 info!("Auth succeeded for {}", peer);
             }
             _ => {
-                warn!("Auth failed from {}: expected text message with token", peer);
-                let _ = ws_sink
-                    .send(Message::Close(None))
-                    .await;
+                warn!(
+                    "Auth failed from {}: expected text message with token",
+                    peer
+                );
+                if let Err(e) = ws_sink.send(Message::Close(None)).await {
+                    warn!(
+                        "Failed to send close after auth failure to {}: {}",
+                        peer, e
+                    );
+                }
                 return Ok(());
             }
         }
@@ -77,10 +129,13 @@ pub async fn handle_connection(
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
 
-    let mut child = pair
+    let child = pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("Failed to spawn shell '{}': {}", shell, e))?;
+
+    // Wrap child in Arc<Mutex> so we can kill it on WebSocket close.
+    let child = Arc::new(std::sync::Mutex::new(child));
 
     // Drop the slave side - the child has it.
     drop(pair.slave);
@@ -107,7 +162,10 @@ pub async fn handle_connection(
                 Ok(0) => break,
                 Ok(n) => {
                     let msg = protocol::encode_data(&buf[..n]);
-                    if ws_tx_pty.blocking_send(Message::Binary(msg.into())).is_err() {
+                    if ws_tx_pty
+                        .blocking_send(Message::Binary(msg.into()))
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -125,11 +183,14 @@ pub async fn handle_connection(
     // Task 2: Forward channel messages to WebSocket sink.
     let ws_write_handle = tokio::spawn(async move {
         while let Some(msg) = ws_rx.recv().await {
-            if ws_sink.send(msg).await.is_err() {
+            if let Err(e) = ws_sink.send(msg).await {
+                warn!("WebSocket send error: {}", e);
                 break;
             }
         }
-        let _ = ws_sink.close().await;
+        if let Err(e) = ws_sink.close().await {
+            warn!("WebSocket close error: {}", e);
+        }
     });
 
     // Task 3: Read from WebSocket and write to PTY / handle resize.
@@ -146,11 +207,16 @@ pub async fn handle_connection(
                             match client_msg {
                                 ClientMessage::Data(payload) => {
                                     let writer = Arc::clone(&writer);
-                                    let _ = tokio::task::spawn_blocking(move || {
+                                    if let Err(e) = tokio::task::spawn_blocking(move || {
                                         let mut w = writer.lock().unwrap();
-                                        let _ = w.write_all(&payload);
+                                        if let Err(e) = w.write_all(&payload) {
+                                            error!("PTY write error: {}", e);
+                                        }
                                     })
-                                    .await;
+                                    .await
+                                    {
+                                        error!("PTY write task failed: {}", e);
+                                    }
                                 }
                                 ClientMessage::Resize {
                                     cols,
@@ -159,7 +225,7 @@ pub async fn handle_connection(
                                     cell_h,
                                 } => {
                                     let master = Arc::clone(&master);
-                                    let _ = tokio::task::spawn_blocking(move || {
+                                    if let Err(e) = tokio::task::spawn_blocking(move || {
                                         let m = master.lock().unwrap();
                                         let size = PtySize {
                                             rows,
@@ -176,7 +242,10 @@ pub async fn handle_connection(
                                             );
                                         }
                                     })
-                                    .await;
+                                    .await
+                                    {
+                                        error!("PTY resize task failed: {}", e);
+                                    }
                                 }
                             }
                         }
@@ -199,15 +268,14 @@ pub async fn handle_connection(
 
     // Task 4: Wait for child to exit and send exit notification.
     let ws_tx_exit = ws_tx.clone();
+    let child_for_wait = Arc::clone(&child);
     let child_wait_handle = tokio::task::spawn_blocking(move || {
-        let status = child.wait();
+        let status = child_for_wait.lock().unwrap().wait();
         let exit_code = match status {
             Ok(status) => {
                 if status.success() {
                     Some(0u8)
                 } else {
-                    // portable-pty ExitStatus doesn't expose the raw code easily,
-                    // so we use 1 for failure.
                     Some(1u8)
                 }
             }
@@ -215,7 +283,9 @@ pub async fn handle_connection(
         };
         info!("Child exited with code: {:?}", exit_code);
         let msg = protocol::encode_exit(exit_code);
-        let _ = ws_tx_exit.blocking_send(Message::Binary(msg.into()));
+        if let Err(e) = ws_tx_exit.blocking_send(Message::Binary(msg.into())) {
+            warn!("Failed to send exit notification: {}", e);
+        }
     });
 
     // Wait for the child to exit or the WebSocket read to finish.
@@ -225,15 +295,30 @@ pub async fn handle_connection(
         }
         _ = ws_read_handle => {
             info!("WebSocket closed by client {}", peer);
+            // Kill the child process if still running.
+            let child_for_kill = Arc::clone(&child);
+            if let Err(e) = tokio::task::spawn_blocking(move || {
+                let mut child = child_for_kill.lock().unwrap();
+                info!("Killing child process after WebSocket close");
+                if let Err(e) = child.kill() {
+                    warn!("Failed to kill child process: {}", e);
+                }
+            }).await {
+                error!("Child kill task failed: {}", e);
+            }
         }
     }
 
     // Clean up: wait briefly for remaining data to flush.
-    let _ = pty_read_handle.await;
+    if let Err(e) = pty_read_handle.await {
+        warn!("PTY read task join error: {}", e);
+    }
 
     // Drop the sender so the write task finishes.
     drop(ws_tx);
-    let _ = ws_write_handle.await;
+    if let Err(e) = ws_write_handle.await {
+        warn!("WebSocket write task join error: {}", e);
+    }
 
     info!("Session ended for {}", peer);
     Ok(())

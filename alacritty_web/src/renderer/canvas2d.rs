@@ -14,19 +14,39 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 use super::colors;
 use crate::terminal::WebEventProxy;
 
+/// Font configuration for the Canvas 2D renderer.
+#[derive(Debug, Clone)]
+pub struct FontConfig {
+    /// Font family CSS string (e.g. "'Fira Code', monospace").
+    pub family: String,
+    /// Font size in CSS pixels.
+    pub size_px: f32,
+    /// Line height multiplier (cell height = font_size * line_height_multiplier).
+    pub line_height_multiplier: f32,
+}
+
+impl Default for FontConfig {
+    fn default() -> Self {
+        Self {
+            family: "'Fira Code', 'Cascadia Code', 'Source Code Pro', monospace".to_string(),
+            size_px: 14.0,
+            line_height_multiplier: 1.4,
+        }
+    }
+}
+
 /// Canvas 2D-based terminal renderer.
 pub struct Canvas2dRenderer {
     canvas: HtmlCanvasElement,
     ctx: CanvasRenderingContext2d,
-    font_family: String,
-    font_size_px: f32,
+    font_config: FontConfig,
     cell_width: f32,
     cell_height: f32,
     device_pixel_ratio: f64,
 }
 
 impl Canvas2dRenderer {
-    /// Create a new Canvas 2D renderer.
+    /// Create a new Canvas 2D renderer with default font configuration.
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Self, JsError> {
         let ctx = canvas
             .get_context("2d")
@@ -35,18 +55,17 @@ impl Canvas2dRenderer {
             .dyn_into::<CanvasRenderingContext2d>()
             .map_err(|_| JsError::new("Not a CanvasRenderingContext2d"))?;
 
-        let font_family = "'Fira Code', 'Cascadia Code', 'Source Code Pro', monospace".to_string();
-        let font_size_px = 14.0;
+        let font_config = FontConfig::default();
 
         // Measure cell dimensions.
-        let font_str = format!("{font_size_px}px {font_family}");
+        let font_str = format!("{}px {}", font_config.size_px, font_config.family);
         ctx.set_font(&font_str);
         let metrics = ctx
             .measure_text("M")
             .map_err(|e| JsError::new(&format!("measureText failed: {e:?}")))?;
 
         let cell_width = metrics.width() as f32;
-        let cell_height = (font_size_px * 1.4_f32).ceil();
+        let cell_height = (font_config.size_px * font_config.line_height_multiplier).ceil();
 
         // Handle device pixel ratio for sharp text.
         let window = web_sys::window().ok_or_else(|| JsError::new("No window"))?;
@@ -59,7 +78,9 @@ impl Canvas2dRenderer {
         canvas.set_height((css_height as f64 * dpr) as u32);
 
         // Scale context for HiDPI.
-        let _ = ctx.scale(dpr, dpr);
+        if let Err(e) = ctx.scale(dpr, dpr) {
+            log::error!("Canvas scale failed: {e:?}");
+        }
 
         log::info!(
             "Canvas2D renderer: cell={cell_width}x{cell_height}, dpr={dpr}, canvas={css_width}x{css_height}"
@@ -68,8 +89,7 @@ impl Canvas2dRenderer {
         Ok(Self {
             canvas: canvas.clone(),
             ctx,
-            font_family,
-            font_size_px,
+            font_config,
             cell_width,
             cell_height,
             device_pixel_ratio: dpr,
@@ -84,7 +104,7 @@ impl Canvas2dRenderer {
         let num_lines = term.screen_lines();
 
         let bg_color = colors::default_named_color(NamedColor::Background);
-        let fg_default = colors::default_named_color(NamedColor::Foreground);
+        let _fg_default = colors::default_named_color(NamedColor::Foreground);
 
         let cw = self.cell_width as f64;
         let ch = self.cell_height as f64;
@@ -98,7 +118,9 @@ impl Canvas2dRenderer {
         if self.canvas.width() != needed_w || self.canvas.height() != needed_h {
             self.canvas.set_width(needed_w);
             self.canvas.set_height(needed_h);
-            let _ = self.ctx.scale(dpr, dpr);
+            if let Err(e) = self.ctx.scale(dpr, dpr) {
+                log::error!("Canvas scale failed during resize: {e:?}");
+            }
         }
 
         // Clear with background color.
@@ -110,7 +132,7 @@ impl Canvas2dRenderer {
             .fill_rect(0.0, 0.0, total_width + 10.0, total_height + 10.0);
 
         // Set font.
-        let font_str = format!("{}px {}", self.font_size_px, self.font_family);
+        let font_str = format!("{}px {}", self.font_config.size_px, self.font_config.family);
         self.ctx.set_font(&font_str);
         self.ctx.set_text_baseline("top");
 
@@ -162,8 +184,10 @@ impl Canvas2dRenderer {
             if is_bold != current_bold || is_italic != current_italic {
                 let weight = if is_bold { "bold " } else { "" };
                 let style = if is_italic { "italic " } else { "" };
-                let font_str =
-                    format!("{style}{weight}{}px {}", self.font_size_px, self.font_family);
+                let font_str = format!(
+                    "{style}{weight}{}px {}",
+                    self.font_config.size_px, self.font_config.family
+                );
                 self.ctx.set_font(&font_str);
                 current_bold = is_bold;
                 current_italic = is_italic;
@@ -175,7 +199,9 @@ impl Canvas2dRenderer {
                 cell_fg.r, cell_fg.g, cell_fg.b
             ));
             let ch_str = cell.c.to_string();
-            let _ = self.ctx.fill_text(&ch_str, x, y + 2.0);
+            if let Err(e) = self.ctx.fill_text(&ch_str, x, y + 2.0) {
+                log::error!("fill_text failed: {e:?}");
+            }
         }
 
         // Draw cursor.
@@ -198,6 +224,35 @@ impl Canvas2dRenderer {
     /// Cell height in pixels.
     pub fn cell_height(&self) -> f32 {
         self.cell_height
+    }
+
+    /// Set the font size and remeasure cell dimensions.
+    pub fn set_font_size(&mut self, size_px: f32) {
+        self.font_config.size_px = size_px;
+        self.remeasure_cells();
+    }
+
+    /// Set the font family and remeasure cell dimensions.
+    pub fn set_font_family(&mut self, family: &str) {
+        self.font_config.family = family.to_string();
+        self.remeasure_cells();
+    }
+
+    /// Set the line height multiplier and remeasure cell dimensions.
+    pub fn set_line_height_multiplier(&mut self, multiplier: f32) {
+        self.font_config.line_height_multiplier = multiplier;
+        self.remeasure_cells();
+    }
+
+    /// Remeasure cell dimensions after font config changes.
+    fn remeasure_cells(&mut self) {
+        let font_str = format!("{}px {}", self.font_config.size_px, self.font_config.family);
+        self.ctx.set_font(&font_str);
+        if let Ok(metrics) = self.ctx.measure_text("M") {
+            self.cell_width = metrics.width() as f32;
+            self.cell_height =
+                (self.font_config.size_px * self.font_config.line_height_multiplier).ceil();
+        }
     }
 
     /// Resize the canvas.

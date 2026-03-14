@@ -28,6 +28,12 @@ pub struct Args {
     /// When set, the client must send this token as its first WebSocket message.
     #[arg(long)]
     token: Option<String>,
+
+    /// Allowed origins for WebSocket connections (repeatable).
+    /// When set, only connections with a matching Origin header are accepted.
+    /// When not set, only same-origin (no Origin header) connections are allowed.
+    #[arg(long = "allowed-origin")]
+    allowed_origins: Vec<String>,
 }
 
 impl Args {
