@@ -1,6 +1,8 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread::{Builder, JoinHandle};
 
 /// Like `thread::spawn`, but with a `name` argument.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn spawn_named<F, T, S>(name: S, f: F) -> JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
