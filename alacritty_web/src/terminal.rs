@@ -96,4 +96,16 @@ impl WebTerminal {
     pub fn term(&self) -> &Rc<FairMutex<Term<WebEventProxy>>> {
         &self.term
     }
+
+    /// Get the number of columns in the terminal grid.
+    pub fn cols(&self) -> u16 {
+        let term = self.term.lock();
+        term.columns() as u16
+    }
+
+    /// Get the number of rows in the terminal grid.
+    pub fn rows(&self) -> u16 {
+        let term = self.term.lock();
+        term.screen_lines() as u16
+    }
 }
