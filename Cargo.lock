@@ -127,6 +127,7 @@ dependencies = [
  "signal-hook",
  "unicode-width 0.2.2",
  "vte",
+ "wasm-bindgen-test",
  "windows-sys 0.59.0",
 ]
 
