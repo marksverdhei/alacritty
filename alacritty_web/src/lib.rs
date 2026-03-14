@@ -189,7 +189,9 @@ impl AlacrittyTerminal {
             // Schedule next frame.
             if let Some(win) = web_sys::window() {
                 if let Some(cb) = callback_clone.borrow().as_ref() {
-                    let _ = win.request_animation_frame(cb.as_ref().unchecked_ref());
+                    if let Err(e) = win.request_animation_frame(cb.as_ref().unchecked_ref()) {
+                        log::warn!("request_animation_frame failed: {e:?}");
+                    }
                 }
             }
         }) as Box<dyn FnMut()>));

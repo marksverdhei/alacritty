@@ -5,6 +5,8 @@
 /// - `0x01` + 4x u16 LE      = resize (client -> server): cols, rows, cell_w, cell_h
 /// - `0x02` + optional u8     = child exited (server -> client), with optional exit code
 
+use log::warn;
+
 pub const MSG_DATA: u8 = 0x00;
 pub const MSG_RESIZE: u8 = 0x01;
 pub const MSG_EXIT: u8 = 0x02;
@@ -36,10 +38,21 @@ pub fn parse_client_message(data: &[u8]) -> Option<ClientMessage> {
                 // Need 1 byte tag + 4 * 2 bytes = 9 bytes total.
                 return None;
             }
-            let cols = u16::from_le_bytes([data[1], data[2]]);
-            let rows = u16::from_le_bytes([data[3], data[4]]);
+            let raw_cols = u16::from_le_bytes([data[1], data[2]]);
+            let raw_rows = u16::from_le_bytes([data[3], data[4]]);
             let cell_w = u16::from_le_bytes([data[5], data[6]]);
             let cell_h = u16::from_le_bytes([data[7], data[8]]);
+
+            // Clamp cols to 1..=500 and rows to 1..=200 to prevent abuse.
+            let cols = raw_cols.clamp(1, 500);
+            let rows = raw_rows.clamp(1, 200);
+            if cols != raw_cols || rows != raw_rows {
+                warn!(
+                    "Resize values clamped: cols {}→{}, rows {}→{}",
+                    raw_cols, cols, raw_rows, rows
+                );
+            }
+
             Some(ClientMessage::Resize {
                 cols,
                 rows,

@@ -41,6 +41,11 @@ pub struct Args {
     /// Idle timeout in seconds -- disconnect sessions with no input (default: 300).
     #[arg(long, default_value_t = 300)]
     idle_timeout: u64,
+
+    /// Allowed WebSocket Origin values (repeatable). If not set, only requests
+    /// with no Origin header (same-origin) are accepted.
+    #[arg(long = "allowed-origin")]
+    allowed_origins: Vec<String>,
 }
 
 impl Args {
@@ -119,6 +124,11 @@ async fn main() {
         .expect("Failed to bind TCP listener");
 
     info!("Alacritty PTY server listening on ws://{}", addr);
+    if args.allowed_origins.is_empty() {
+        info!("CORS: only same-origin requests (no Origin header) accepted");
+    } else {
+        info!("CORS: allowed origins: {:?}", args.allowed_origins);
+    }
     info!(
         "Max sessions: {}, Idle timeout: {}s",
         args.max_sessions, args.idle_timeout

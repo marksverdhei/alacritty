@@ -23,15 +23,49 @@ pub async fn handle_connection(
     peer: SocketAddr,
     args: Arc<Args>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // WebSocket upgrade with CORS headers.
+    // WebSocket upgrade with CORS origin validation.
+    let allowed_origins = args.allowed_origins.clone();
     let ws_stream =
-        tokio_tungstenite::accept_hdr_async(stream, |req: &Request, mut resp: Response| {
-            // Add CORS header for the demo website.
-            resp.headers_mut().insert(
-                http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-                http::HeaderValue::from_static("*"),
-            );
-            let _ = req;
+        tokio_tungstenite::accept_hdr_async(stream, move |req: &Request, mut resp: Response| {
+            // Validate the Origin header.
+            let origin = req
+                .headers()
+                .get(http::header::ORIGIN)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            match (&origin, allowed_origins.is_empty()) {
+                // No Origin header and no allowed origins configured: same-origin, allow.
+                (None, true) => {},
+                // Origin present but no allowed origins configured: reject.
+                (Some(o), true) => {
+                    warn!("Rejecting connection with Origin '{}' (no allowed origins configured)", o);
+                    return Err(http::Response::builder()
+                        .status(http::StatusCode::FORBIDDEN)
+                        .body(Some("Origin not allowed".to_string()))
+                        .unwrap());
+                },
+                // Allowed origins configured: check if Origin matches.
+                (Some(o), false) => {
+                    if !allowed_origins.contains(o) {
+                        warn!("Rejecting connection with Origin '{}' (not in allowed list)", o);
+                        return Err(http::Response::builder()
+                            .status(http::StatusCode::FORBIDDEN)
+                            .body(Some("Origin not allowed".to_string()))
+                            .unwrap());
+                    }
+                },
+                // No Origin header but allowed origins configured: allow (e.g. non-browser client).
+                (None, false) => {},
+            }
+
+            if let Some(ref o) = origin {
+                if let Ok(val) = http::HeaderValue::from_str(o) {
+                    resp.headers_mut()
+                        .insert(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, val);
+                }
+            }
+
             Ok(resp)
         })
         .await?;
@@ -54,7 +88,9 @@ pub async fn handle_connection(
 
                 if !valid {
                     warn!("Auth failed from {}: invalid token", peer);
-                    let _ = ws_sink.send(Message::Close(None)).await;
+                    if let Err(e) = ws_sink.send(Message::Close(None)).await {
+                        warn!("Failed to send close after auth failure: {}", e);
+                    }
                     return Ok(());
                 }
                 info!("Auth succeeded for {}", peer);
@@ -64,7 +100,9 @@ pub async fn handle_connection(
                     "Auth failed from {}: expected text message with token",
                     peer
                 );
-                let _ = ws_sink.send(Message::Close(None)).await;
+                if let Err(e) = ws_sink.send(Message::Close(None)).await {
+                    warn!("Failed to send close after auth failure: {}", e);
+                }
                 return Ok(());
             },
         }
@@ -87,7 +125,7 @@ pub async fn handle_connection(
     let mut cmd = CommandBuilder::new(&shell);
     cmd.env("TERM", "xterm-256color");
 
-    let mut child = pair
+    let child = pair
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("Failed to spawn shell '{}': {}", shell, e))?;
@@ -142,7 +180,9 @@ pub async fn handle_connection(
                 break;
             }
         }
-        let _ = ws_sink.close().await;
+        if let Err(e) = ws_sink.close().await {
+            warn!("Failed to close WebSocket sink: {}", e);
+        }
     });
 
     // Task 3: Read from WebSocket and write to PTY / handle resize.
@@ -179,11 +219,15 @@ pub async fn handle_connection(
                                         ClientMessage::Data(payload) => {
                                             last_input = Instant::now();
                                             let writer = Arc::clone(&writer);
-                                            let _ = tokio::task::spawn_blocking(move || {
+                                            if let Err(e) = tokio::task::spawn_blocking(move || {
                                                 let mut w = writer.lock().unwrap();
-                                                let _ = w.write_all(&payload);
+                                                if let Err(e) = w.write_all(&payload) {
+                                                    error!("PTY write error: {}", e);
+                                                }
                                             })
-                                            .await;
+                                            .await {
+                                                error!("PTY write task panicked: {}", e);
+                                            }
                                         },
                                         ClientMessage::Resize {
                                             cols,
@@ -194,7 +238,7 @@ pub async fn handle_connection(
                                             // Resize also counts as activity.
                                             last_input = Instant::now();
                                             let master = Arc::clone(&master);
-                                            let _ = tokio::task::spawn_blocking(move || {
+                                            if let Err(e) = tokio::task::spawn_blocking(move || {
                                                 let m = master.lock().unwrap();
                                                 let size = PtySize {
                                                     rows,
@@ -211,7 +255,9 @@ pub async fn handle_connection(
                                                     );
                                                 }
                                             })
-                                            .await;
+                                            .await {
+                                                error!("PTY resize task panicked: {}", e);
+                                            }
                                         },
                                     }
                                 }
@@ -239,10 +285,14 @@ pub async fn handle_connection(
         }
     });
 
+    // Wrap child in Arc<Mutex> so we can kill it on WebSocket close.
+    let child = Arc::new(std::sync::Mutex::new(child));
+
     // Task 4: Wait for child to exit and send exit notification.
     let ws_tx_exit = ws_tx.clone();
+    let child_for_wait = Arc::clone(&child);
     let child_wait_handle = tokio::task::spawn_blocking(move || {
-        let status = child.wait();
+        let status = child_for_wait.lock().unwrap().wait();
         let exit_code = match status {
             Ok(status) => {
                 if status.success() {
@@ -257,7 +307,9 @@ pub async fn handle_connection(
         };
         info!("Child exited with code: {:?}", exit_code);
         let msg = protocol::encode_exit(exit_code);
-        let _ = ws_tx_exit.blocking_send(Message::Binary(msg.into()));
+        if let Err(e) = ws_tx_exit.blocking_send(Message::Binary(msg.into())) {
+            warn!("Failed to send exit notification: {}", e);
+        }
     });
 
     // Wait for the child to exit or the WebSocket read to finish.
@@ -267,15 +319,28 @@ pub async fn handle_connection(
         }
         _ = ws_read_handle => {
             info!("WebSocket closed by client {}", peer);
+            // Kill the child process if still running.
+            if let Ok(mut child_guard) = child.lock() {
+                if let Err(e) = child_guard.kill() {
+                    // ESRCH (no such process) is expected if already exited.
+                    warn!("Failed to kill child process: {}", e);
+                } else {
+                    info!("Killed child process for disconnected client {}", peer);
+                }
+            }
         }
     }
 
     // Clean up: wait briefly for remaining data to flush.
-    let _ = pty_read_handle.await;
+    if let Err(e) = pty_read_handle.await {
+        error!("PTY read task panicked: {}", e);
+    }
 
     // Drop the sender so the write task finishes.
     drop(ws_tx);
-    let _ = ws_write_handle.await;
+    if let Err(e) = ws_write_handle.await {
+        error!("WebSocket write task panicked: {}", e);
+    }
 
     info!("Session ended for {}", peer);
     Ok(())
