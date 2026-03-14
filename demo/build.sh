@@ -9,9 +9,16 @@ echo "Building alacritty_web WASM package..."
 cd "$PROJECT_DIR/alacritty_web"
 wasm-pack build --target web
 
-echo "Copying pkg to demo directory..."
-rm -rf "$SCRIPT_DIR/pkg"
-cp -r "$PROJECT_DIR/alacritty_web/pkg" "$SCRIPT_DIR/pkg"
+echo "Copying pkg to demo/static directory..."
+rm -rf "$SCRIPT_DIR/static/pkg"
+cp -r "$PROJECT_DIR/alacritty_web/pkg" "$SCRIPT_DIR/static/pkg"
 
-echo "Done! Serve the demo directory with any HTTP server, e.g.:"
-echo "  cd $SCRIPT_DIR && python3 -m http.server 8080"
+echo "Installing demo dependencies..."
+cd "$SCRIPT_DIR"
+npm install
+
+echo "Building Svelte demo site..."
+npm run build
+
+echo "Done! The built site is in demo/build/"
+echo "For development, run: cd demo && npm run dev"
