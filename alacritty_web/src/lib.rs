@@ -7,44 +7,14 @@ mod websocket;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
-/// Configuration passed from JavaScript.
+/// Font configuration for the terminal renderer, matching `FontConfig` in `canvas2d.rs`.
 ///
-/// Accepted as a JS object:
-/// ```js
-/// { fontSize: 14, fontFamily: "monospace", theme: "dark" }
-/// ```
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct TerminalConfig {
-    #[serde(default = "default_font_size")]
-    font_size: f32,
-    #[serde(default = "default_font_family")]
-    font_family: String,
-    #[serde(default)]
-    theme: Option<String>,
-}
-
-fn default_font_size() -> f32 {
-    14.0
-}
-
-fn default_font_family() -> String {
-    "'Fira Code', 'Cascadia Code', 'Source Code Pro', monospace".to_string()
-}
-
-impl Default for TerminalConfig {
-    fn default() -> Self {
-        Self {
-            font_size: default_font_size(),
-            font_family: default_font_family(),
-            theme: None,
-        }
-    }
-}
+/// All fields have sensible defaults so the struct can be constructed with just
+/// `FontConfig::default()`.
+pub use renderer::canvas2d::FontConfig;
 
 /// Initialize panic hook and logger for better WASM debugging.
 fn init_wasm() {
@@ -72,31 +42,12 @@ pub struct AlacrittyTerminal {
 #[wasm_bindgen]
 impl AlacrittyTerminal {
     /// Create a new terminal attached to the given canvas element.
-    ///
-    /// The optional `config` parameter accepts a JS object:
-    /// ```js
-    /// { fontSize: 14, fontFamily: "monospace", theme: "dark" }
-    /// ```
     #[wasm_bindgen(constructor)]
-    pub fn new(canvas: HtmlCanvasElement, config: JsValue) -> Result<AlacrittyTerminal, JsError> {
+    pub fn new(canvas: HtmlCanvasElement) -> Result<AlacrittyTerminal, JsError> {
         init_wasm();
         log::info!("Initializing AlacrittyTerminal");
 
-        let cfg: TerminalConfig = if config.is_undefined() || config.is_null() {
-            TerminalConfig::default()
-        } else {
-            serde_wasm_bindgen::from_value(config)
-                .map_err(|e| JsError::new(&format!("Invalid config: {e}")))?
-        };
-
-        log::info!("Config: {cfg:?}");
-
-        let mut renderer = renderer::canvas2d::Canvas2dRenderer::new(&canvas)?;
-
-        // Apply config to renderer.
-        renderer.set_font_size(cfg.font_size);
-        renderer.set_font_family(&cfg.font_family);
-
+        let renderer = renderer::canvas2d::Canvas2dRenderer::new(&canvas)?;
         let cell_w = renderer.cell_width();
         let cell_h = renderer.cell_height();
 
@@ -133,9 +84,15 @@ impl AlacrittyTerminal {
     pub fn connect(&mut self, ws_url: &str) -> Result<(), JsError> {
         // WebSocket data goes into the queue, not directly into the terminal.
         let queue = self.incoming_data.clone();
-        let ws = websocket::WsConnection::new(ws_url, move |data| {
-            queue.borrow_mut().push(data.to_vec());
-        })?;
+        let ws = websocket::WsConnection::new(
+            ws_url,
+            || {
+                log::info!("WebSocket connection ready");
+            },
+            move |data| {
+                queue.borrow_mut().push(data.to_vec());
+            },
+        )?;
         self.ws = Some(ws);
         Ok(())
     }
@@ -152,7 +109,7 @@ impl AlacrittyTerminal {
         }
     }
 
-    /// Send a resize message to the server and update the terminal grid.
+    /// Send a resize message to the server.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         self.state.borrow_mut().terminal.resize(cols, rows);
         self.state.borrow_mut().dirty = true;
@@ -161,10 +118,14 @@ impl AlacrittyTerminal {
         }
     }
 
-    /// Focus the canvas element.
-    pub fn focus(&self) {
-        let html_element: &web_sys::HtmlElement = self.canvas.as_ref();
-        let _ = html_element.focus();
+    /// Get cell width in pixels.
+    pub fn cell_width(&self) -> f32 {
+        self.state.borrow().renderer.cell_width()
+    }
+
+    /// Get cell height in pixels.
+    pub fn cell_height(&self) -> f32 {
+        self.state.borrow().renderer.cell_height()
     }
 
     /// Set the font size in pixels and trigger a re-render.
@@ -181,32 +142,11 @@ impl AlacrittyTerminal {
         app.dirty = true;
     }
 
-    /// Get cell width in pixels.
-    pub fn cell_width(&self) -> f32 {
-        self.state.borrow().renderer.cell_width()
-    }
-
-    /// Get cell height in pixels.
-    pub fn cell_height(&self) -> f32 {
-        self.state.borrow().renderer.cell_height()
-    }
-
-    /// Get the number of columns in the terminal grid.
-    pub fn cols(&self) -> u16 {
-        self.state.borrow().terminal.cols()
-    }
-
-    /// Get the number of rows in the terminal grid.
-    pub fn rows(&self) -> u16 {
-        self.state.borrow().terminal.rows()
-    }
-
-    /// Feed raw bytes into the terminal as if received from a PTY.
-    ///
-    /// This is useful for demos, replays, or custom data sources that
-    /// bypass the WebSocket connection.
-    pub fn feed(&self, data: &[u8]) {
-        self.incoming_data.borrow_mut().push(data.to_vec());
+    /// Set the line height multiplier and trigger a re-render.
+    pub fn set_line_height_multiplier(&self, multiplier: f32) {
+        let mut app = self.state.borrow_mut();
+        app.renderer.set_line_height_multiplier(multiplier);
+        app.dirty = true;
     }
 
     /// Clean up resources.

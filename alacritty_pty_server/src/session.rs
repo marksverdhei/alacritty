@@ -1,11 +1,14 @@
 use std::io::{Read, Write};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
+use subtle::ConstantTimeEq;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::http;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -21,42 +24,49 @@ pub async fn handle_connection(
     args: Arc<Args>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // WebSocket upgrade with CORS headers.
-    let ws_stream = tokio_tungstenite::accept_hdr_async(stream, |req: &Request, mut resp: Response| {
-        // Add CORS header for the demo website.
-        resp.headers_mut().insert(
-            http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            http::HeaderValue::from_static("*"),
-        );
-        let _ = req;
-        Ok(resp)
-    })
-    .await?;
+    let ws_stream =
+        tokio_tungstenite::accept_hdr_async(stream, |req: &Request, mut resp: Response| {
+            // Add CORS header for the demo website.
+            resp.headers_mut().insert(
+                http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                http::HeaderValue::from_static("*"),
+            );
+            let _ = req;
+            Ok(resp)
+        })
+        .await?;
 
     info!("WebSocket connection established with {}", peer);
 
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
-    // Token authentication if configured.
+    // Token authentication if configured -- uses constant-time comparison.
     if let Some(ref expected_token) = args.token {
         info!("Waiting for auth token from {}", peer);
         match ws_stream.next().await {
             Some(Ok(Message::Text(token))) => {
-                if token.trim() != expected_token.as_str() {
+                let provided = token.trim().as_bytes();
+                let expected = expected_token.as_bytes();
+
+                // Constant-time comparison to prevent timing attacks.
+                let valid =
+                    provided.len() == expected.len() && bool::from(provided.ct_eq(expected));
+
+                if !valid {
                     warn!("Auth failed from {}: invalid token", peer);
-                    let _ = ws_sink
-                        .send(Message::Close(None))
-                        .await;
+                    let _ = ws_sink.send(Message::Close(None)).await;
                     return Ok(());
                 }
                 info!("Auth succeeded for {}", peer);
-            }
+            },
             _ => {
-                warn!("Auth failed from {}: expected text message with token", peer);
-                let _ = ws_sink
-                    .send(Message::Close(None))
-                    .await;
+                warn!(
+                    "Auth failed from {}: expected text message with token",
+                    peer
+                );
+                let _ = ws_sink.send(Message::Close(None)).await;
                 return Ok(());
-            }
+            },
         }
     }
 
@@ -107,17 +117,20 @@ pub async fn handle_connection(
                 Ok(0) => break,
                 Ok(n) => {
                     let msg = protocol::encode_data(&buf[..n]);
-                    if ws_tx_pty.blocking_send(Message::Binary(msg.into())).is_err() {
+                    if ws_tx_pty
+                        .blocking_send(Message::Binary(msg.into()))
+                        .is_err()
+                    {
                         break;
                     }
-                }
+                },
                 Err(e) => {
                     // EIO is expected when the child exits on Linux.
                     if e.kind() != std::io::ErrorKind::Other {
                         error!("PTY read error: {}", e);
                     }
                     break;
-                }
+                },
             }
         }
     });
@@ -133,63 +146,92 @@ pub async fn handle_connection(
     });
 
     // Task 3: Read from WebSocket and write to PTY / handle resize.
+    // Includes idle timeout: if no input received within the configured period, disconnect.
     let master = pair.master;
     let _ws_tx_client = ws_tx.clone();
+    let idle_timeout_secs = args.idle_timeout;
     let ws_read_handle = tokio::task::spawn({
         let writer = Arc::new(std::sync::Mutex::new(writer));
         let master = Arc::new(std::sync::Mutex::new(master));
         async move {
-            while let Some(msg_result) = ws_stream.next().await {
-                match msg_result {
-                    Ok(Message::Binary(data)) => {
-                        if let Some(client_msg) = protocol::parse_client_message(&data) {
-                            match client_msg {
-                                ClientMessage::Data(payload) => {
-                                    let writer = Arc::clone(&writer);
-                                    let _ = tokio::task::spawn_blocking(move || {
-                                        let mut w = writer.lock().unwrap();
-                                        let _ = w.write_all(&payload);
-                                    })
-                                    .await;
-                                }
-                                ClientMessage::Resize {
-                                    cols,
-                                    rows,
-                                    cell_w,
-                                    cell_h,
-                                } => {
-                                    let master = Arc::clone(&master);
-                                    let _ = tokio::task::spawn_blocking(move || {
-                                        let m = master.lock().unwrap();
-                                        let size = PtySize {
-                                            rows,
+            let idle_timeout = Duration::from_secs(idle_timeout_secs);
+            let mut last_input = Instant::now();
+
+            loop {
+                let remaining = idle_timeout
+                    .checked_sub(last_input.elapsed())
+                    .unwrap_or(Duration::ZERO);
+
+                if remaining.is_zero() {
+                    warn!(
+                        "Idle timeout ({}s) reached for {}",
+                        idle_timeout_secs, peer
+                    );
+                    break;
+                }
+
+                tokio::select! {
+                    msg = ws_stream.next() => {
+                        match msg {
+                            Some(Ok(Message::Binary(data))) => {
+                                if let Some(client_msg) = protocol::parse_client_message(&data) {
+                                    match client_msg {
+                                        ClientMessage::Data(payload) => {
+                                            last_input = Instant::now();
+                                            let writer = Arc::clone(&writer);
+                                            let _ = tokio::task::spawn_blocking(move || {
+                                                let mut w = writer.lock().unwrap();
+                                                let _ = w.write_all(&payload);
+                                            })
+                                            .await;
+                                        },
+                                        ClientMessage::Resize {
                                             cols,
-                                            pixel_width: cell_w,
-                                            pixel_height: cell_h,
-                                        };
-                                        if let Err(e) = m.resize(size) {
-                                            warn!("PTY resize failed: {}", e);
-                                        } else {
-                                            info!(
-                                                "PTY resized to {}x{} ({}x{} px)",
-                                                cols, rows, cell_w, cell_h
-                                            );
-                                        }
-                                    })
-                                    .await;
+                                            rows,
+                                            cell_w,
+                                            cell_h,
+                                        } => {
+                                            // Resize also counts as activity.
+                                            last_input = Instant::now();
+                                            let master = Arc::clone(&master);
+                                            let _ = tokio::task::spawn_blocking(move || {
+                                                let m = master.lock().unwrap();
+                                                let size = PtySize {
+                                                    rows,
+                                                    cols,
+                                                    pixel_width: cell_w,
+                                                    pixel_height: cell_h,
+                                                };
+                                                if let Err(e) = m.resize(size) {
+                                                    warn!("PTY resize failed: {}", e);
+                                                } else {
+                                                    info!(
+                                                        "PTY resized to {}x{} ({}x{} px)",
+                                                        cols, rows, cell_w, cell_h
+                                                    );
+                                                }
+                                            })
+                                            .await;
+                                        },
+                                    }
                                 }
-                            }
+                            },
+                            Some(Ok(Message::Close(_))) => {
+                                info!("Client {} sent close", peer);
+                                break;
+                            },
+                            Some(Ok(_)) => {
+                                // Ignore text, ping, pong - we only use binary.
+                            },
+                            Some(Err(e)) => {
+                                warn!("WebSocket read error from {}: {}", peer, e);
+                                break;
+                            },
+                            None => break,
                         }
                     }
-                    Ok(Message::Close(_)) => {
-                        info!("Client {} sent close", peer);
-                        break;
-                    }
-                    Ok(_) => {
-                        // Ignore text, ping, pong - we only use binary.
-                    }
-                    Err(e) => {
-                        warn!("WebSocket read error from {}: {}", peer, e);
+                    _ = tokio::time::sleep(remaining) => {
+                        warn!("Idle timeout ({}s) reached for {}", idle_timeout_secs, peer);
                         break;
                     }
                 }
@@ -210,7 +252,7 @@ pub async fn handle_connection(
                     // so we use 1 for failure.
                     Some(1u8)
                 }
-            }
+            },
             Err(_) => None,
         };
         info!("Child exited with code: {:?}", exit_code);
