@@ -90,7 +90,14 @@ impl AlacrittyTerminal {
                 log::info!("WebSocket connection ready");
             },
             move |data| {
-                queue.borrow_mut().push(data.to_vec());
+                // Use try_borrow_mut to avoid panicking if the render loop
+                // is currently draining the queue (shouldn't happen with
+                // mem::take, but defensive).
+                if let Ok(mut q) = queue.try_borrow_mut() {
+                    q.push(data.to_vec());
+                } else {
+                    log::warn!("Dropped {} PTY bytes (queue busy)", data.len());
+                }
             },
         )?;
         self.ws = Some(ws);
@@ -149,6 +156,22 @@ impl AlacrittyTerminal {
         app.dirty = true;
     }
 
+    /// Get the number of columns in the terminal grid.
+    pub fn cols(&self) -> u16 {
+        self.state.borrow().terminal.cols()
+    }
+
+    /// Get the number of rows in the terminal grid.
+    pub fn rows(&self) -> u16 {
+        self.state.borrow().terminal.rows()
+    }
+
+    /// Feed raw bytes into the terminal as if received from a PTY.
+    /// Useful for demos, replays, or custom data sources without WebSocket.
+    pub fn feed(&self, data: &[u8]) {
+        self.incoming_data.borrow_mut().push(data.to_vec());
+    }
+
     /// Clean up resources.
     pub fn dispose(self) {
         drop(self);
@@ -164,14 +187,23 @@ impl AlacrittyTerminal {
         let callback_clone = callback.clone();
 
         *callback.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-            // Drain incoming data into the terminal.
-            let chunks: Vec<Vec<u8>> = incoming.borrow_mut().drain(..).collect();
+            // Swap the incoming queue with an empty vec to minimize borrow time.
+            let chunks = {
+                let mut q = incoming.borrow_mut();
+                if q.is_empty() {
+                    Vec::new()
+                } else {
+                    std::mem::take(&mut *q)
+                }
+            }; // RefMut dropped here — incoming is no longer borrowed.
+
             if !chunks.is_empty() {
                 let mut app = state.borrow_mut();
-                for chunk in chunks {
-                    app.terminal.process_bytes(&chunk);
+                for chunk in &chunks {
+                    app.terminal.process_bytes(chunk);
                 }
                 app.dirty = true;
+                drop(app); // Explicitly drop before render.
             }
 
             // Render if dirty.

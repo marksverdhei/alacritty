@@ -51,9 +51,9 @@ impl WsConnection {
             log::info!("WebSocket connection opened");
             *open_flag.borrow_mut() = true;
 
-            // Flush any pending messages.
-            let mut queue = pending_flush.borrow_mut();
-            while let Some(msg) = queue.pop_front() {
+            // Drain pending messages without holding the borrow during send.
+            let pending_msgs: Vec<Vec<u8>> = pending_flush.borrow_mut().drain(..).collect();
+            for msg in pending_msgs {
                 if let Err(e) = ws_for_open.send_with_u8_array(&msg) {
                     log::error!("WebSocket send error while flushing pending: {e:?}");
                 }
