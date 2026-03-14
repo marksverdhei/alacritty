@@ -84,7 +84,7 @@ impl Canvas2dRenderer {
         let num_lines = term.screen_lines();
 
         let bg_color = colors::default_named_color(NamedColor::Background);
-        let fg_default = colors::default_named_color(NamedColor::Foreground);
+        let _fg_default = colors::default_named_color(NamedColor::Foreground);
 
         let cw = self.cell_width as f64;
         let ch = self.cell_height as f64;
@@ -198,6 +198,28 @@ impl Canvas2dRenderer {
     /// Cell height in pixels.
     pub fn cell_height(&self) -> f32 {
         self.cell_height
+    }
+
+    /// Set the font size and remeasure cell dimensions.
+    pub fn set_font_size(&mut self, size_px: f32) {
+        self.font_size_px = size_px;
+        self.remeasure_cells();
+    }
+
+    /// Set the font family and remeasure cell dimensions.
+    pub fn set_font_family(&mut self, family: &str) {
+        self.font_family = family.to_string();
+        self.remeasure_cells();
+    }
+
+    /// Remeasure cell dimensions after font changes.
+    fn remeasure_cells(&mut self) {
+        let font_str = format!("{}px {}", self.font_size_px, self.font_family);
+        self.ctx.set_font(&font_str);
+        if let Ok(metrics) = self.ctx.measure_text("M") {
+            self.cell_width = metrics.width() as f32;
+            self.cell_height = (self.font_size_px * 1.4_f32).ceil();
+        }
     }
 
     /// Resize the canvas.

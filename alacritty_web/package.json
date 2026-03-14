@@ -1,0 +1,33 @@
+{
+  "name": "@alacritty/web",
+  "version": "0.1.0",
+  "description": "Alacritty terminal emulator for the browser via WebAssembly",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alacritty/alacritty.git",
+    "directory": "alacritty_web"
+  },
+  "main": "pkg/alacritty_web.js",
+  "module": "pkg/alacritty_web.js",
+  "types": "pkg/alacritty_web.d.ts",
+  "files": [
+    "pkg/alacritty_web.js",
+    "pkg/alacritty_web.d.ts",
+    "pkg/alacritty_web_bg.wasm"
+  ],
+  "sideEffects": [
+    "pkg/alacritty_web.js"
+  ],
+  "keywords": [
+    "terminal",
+    "alacritty",
+    "wasm",
+    "webassembly",
+    "canvas"
+  ],
+  "scripts": {
+    "build": "bash build-npm.sh",
+    "prepublishOnly": "npm run build"
+  }
+}

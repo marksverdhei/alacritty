@@ -7,8 +7,44 @@ mod websocket;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
+
+/// Configuration passed from JavaScript.
+///
+/// Accepted as a JS object:
+/// ```js
+/// { fontSize: 14, fontFamily: "monospace", theme: "dark" }
+/// ```
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct TerminalConfig {
+    #[serde(default = "default_font_size")]
+    font_size: f32,
+    #[serde(default = "default_font_family")]
+    font_family: String,
+    #[serde(default)]
+    theme: Option<String>,
+}
+
+fn default_font_size() -> f32 {
+    14.0
+}
+
+fn default_font_family() -> String {
+    "'Fira Code', 'Cascadia Code', 'Source Code Pro', monospace".to_string()
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            font_size: default_font_size(),
+            font_family: default_font_family(),
+            theme: None,
+        }
+    }
+}
 
 /// Initialize panic hook and logger for better WASM debugging.
 fn init_wasm() {
@@ -36,12 +72,31 @@ pub struct AlacrittyTerminal {
 #[wasm_bindgen]
 impl AlacrittyTerminal {
     /// Create a new terminal attached to the given canvas element.
+    ///
+    /// The optional `config` parameter accepts a JS object:
+    /// ```js
+    /// { fontSize: 14, fontFamily: "monospace", theme: "dark" }
+    /// ```
     #[wasm_bindgen(constructor)]
-    pub fn new(canvas: HtmlCanvasElement) -> Result<AlacrittyTerminal, JsError> {
+    pub fn new(canvas: HtmlCanvasElement, config: JsValue) -> Result<AlacrittyTerminal, JsError> {
         init_wasm();
         log::info!("Initializing AlacrittyTerminal");
 
-        let renderer = renderer::canvas2d::Canvas2dRenderer::new(&canvas)?;
+        let cfg: TerminalConfig = if config.is_undefined() || config.is_null() {
+            TerminalConfig::default()
+        } else {
+            serde_wasm_bindgen::from_value(config)
+                .map_err(|e| JsError::new(&format!("Invalid config: {e}")))?
+        };
+
+        log::info!("Config: {cfg:?}");
+
+        let mut renderer = renderer::canvas2d::Canvas2dRenderer::new(&canvas)?;
+
+        // Apply config to renderer.
+        renderer.set_font_size(cfg.font_size);
+        renderer.set_font_family(&cfg.font_family);
+
         let cell_w = renderer.cell_width();
         let cell_h = renderer.cell_height();
 
@@ -97,13 +152,33 @@ impl AlacrittyTerminal {
         }
     }
 
-    /// Send a resize message to the server.
+    /// Send a resize message to the server and update the terminal grid.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         self.state.borrow_mut().terminal.resize(cols, rows);
         self.state.borrow_mut().dirty = true;
         if let Some(ws) = &self.ws {
             ws.send_resize(cols, rows, 0, 0);
         }
+    }
+
+    /// Focus the canvas element.
+    pub fn focus(&self) {
+        let html_element: &web_sys::HtmlElement = self.canvas.as_ref();
+        let _ = html_element.focus();
+    }
+
+    /// Set the font size in pixels and trigger a re-render.
+    pub fn set_font_size(&self, size_px: f32) {
+        let mut app = self.state.borrow_mut();
+        app.renderer.set_font_size(size_px);
+        app.dirty = true;
+    }
+
+    /// Set the font family and trigger a re-render.
+    pub fn set_font_family(&self, family: &str) {
+        let mut app = self.state.borrow_mut();
+        app.renderer.set_font_family(family);
+        app.dirty = true;
     }
 
     /// Get cell width in pixels.
@@ -114,6 +189,24 @@ impl AlacrittyTerminal {
     /// Get cell height in pixels.
     pub fn cell_height(&self) -> f32 {
         self.state.borrow().renderer.cell_height()
+    }
+
+    /// Get the number of columns in the terminal grid.
+    pub fn cols(&self) -> u16 {
+        self.state.borrow().terminal.cols()
+    }
+
+    /// Get the number of rows in the terminal grid.
+    pub fn rows(&self) -> u16 {
+        self.state.borrow().terminal.rows()
+    }
+
+    /// Feed raw bytes into the terminal as if received from a PTY.
+    ///
+    /// This is useful for demos, replays, or custom data sources that
+    /// bypass the WebSocket connection.
+    pub fn feed(&self, data: &[u8]) {
+        self.incoming_data.borrow_mut().push(data.to_vec());
     }
 
     /// Clean up resources.
