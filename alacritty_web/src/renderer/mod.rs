@@ -2,8 +2,11 @@
 
 pub mod canvas2d;
 pub mod colors;
+#[allow(dead_code)]
 mod glyph_cache;
+#[allow(dead_code)]
 mod rects;
+#[allow(dead_code)]
 mod text;
 
 use alacritty_terminal::grid::Dimensions;
@@ -17,6 +20,7 @@ use web_sys::HtmlCanvasElement;
 use crate::terminal::WebEventProxy;
 
 /// The main wgpu renderer.
+#[allow(dead_code)]
 pub struct WgpuRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -29,6 +33,7 @@ pub struct WgpuRenderer {
     cell_height: f32,
 }
 
+#[allow(dead_code)]
 impl WgpuRenderer {
     /// Initialize wgpu from a canvas element.
     pub async fn new(canvas: &HtmlCanvasElement) -> Result<Self, JsError> {

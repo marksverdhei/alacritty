@@ -111,13 +111,15 @@ impl Canvas2dRenderer {
 
         let cw = self.cell_width as f64;
         let ch = self.cell_height as f64;
-        let total_width = num_cols as f64 * cw;
-        let total_height = num_lines as f64 * ch;
+        let _total_width = num_cols as f64 * cw;
+        let _total_height = num_lines as f64 * ch;
 
-        // Update canvas backing store if needed.
+        // Update canvas backing store to match CSS size (fill container).
         let dpr = self.device_pixel_ratio;
-        let needed_w = (total_width * dpr).ceil() as u32;
-        let needed_h = (total_height * dpr).ceil() as u32;
+        let css_w = self.canvas.client_width().max(1) as u32;
+        let css_h = self.canvas.client_height().max(1) as u32;
+        let needed_w = (css_w as f64 * dpr).ceil() as u32;
+        let needed_h = (css_h as f64 * dpr).ceil() as u32;
         if self.canvas.width() != needed_w || self.canvas.height() != needed_h {
             self.canvas.set_width(needed_w);
             self.canvas.set_height(needed_h);
@@ -125,14 +127,16 @@ impl Canvas2dRenderer {
                 log::warn!("Canvas scale failed: {e:?}");
             }
         }
+        let canvas_width = css_w as f64;
+        let canvas_height = css_h as f64;
 
-        // Clear with background color.
+        // Clear entire canvas with background color.
         self.ctx.set_fill_style_str(&format!(
             "rgb({},{},{})",
             bg_color.r, bg_color.g, bg_color.b
         ));
         self.ctx
-            .fill_rect(0.0, 0.0, total_width + 10.0, total_height + 10.0);
+            .fill_rect(0.0, 0.0, canvas_width, canvas_height);
 
         // Set font.
         let font_str = format!("{}px {}", self.font_size_px, self.font_family);
@@ -256,6 +260,7 @@ impl Canvas2dRenderer {
     }
 
     /// Resize the canvas.
+    #[allow(dead_code)]
     pub fn resize(&self, _width: u32, _height: u32) {
         // Canvas resize is handled in render() based on terminal dimensions.
     }

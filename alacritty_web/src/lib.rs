@@ -27,15 +27,16 @@ struct AppState {
     renderer: renderer::canvas2d::Canvas2dRenderer,
     terminal: terminal::WebTerminal,
     dirty: bool,
+    ws: Option<websocket::WsConnection>,
+    /// Data fed directly (replay/WebContainer), not via WebSocket.
+    local_data: Vec<Vec<u8>>,
 }
 
 /// The main Alacritty terminal component for the browser.
 #[wasm_bindgen]
 pub struct AlacrittyTerminal {
     state: Rc<RefCell<AppState>>,
-    /// Incoming PTY data is queued here to avoid RefCell borrow conflicts.
-    incoming_data: Rc<RefCell<Vec<Vec<u8>>>>,
-    ws: Option<websocket::WsConnection>,
+    #[allow(dead_code)]
     canvas: HtmlCanvasElement,
 }
 
@@ -64,14 +65,12 @@ impl AlacrittyTerminal {
             renderer,
             terminal,
             dirty: true,
+            ws: None,
+            local_data: Vec::new(),
         }));
-
-        let incoming_data: Rc<RefCell<Vec<Vec<u8>>>> = Rc::new(RefCell::new(Vec::new()));
 
         let term = AlacrittyTerminal {
             state,
-            incoming_data,
-            ws: None,
             canvas,
         };
 
@@ -82,45 +81,39 @@ impl AlacrittyTerminal {
 
     /// Connect to a WebSocket PTY server.
     pub fn connect(&mut self, ws_url: &str) -> Result<(), JsError> {
-        // WebSocket data goes into the queue, not directly into the terminal.
-        let queue = self.incoming_data.clone();
-        let ws = websocket::WsConnection::new(
-            ws_url,
-            || {
-                log::info!("WebSocket connection ready");
-            },
-            move |data| {
-                // Use try_borrow_mut to avoid panicking if the render loop
-                // is currently draining the queue (shouldn't happen with
-                // mem::take, but defensive).
-                if let Ok(mut q) = queue.try_borrow_mut() {
-                    q.push(data.to_vec());
-                } else {
-                    log::warn!("Dropped {} PTY bytes (queue busy)", data.len());
-                }
-            },
-        )?;
-        self.ws = Some(ws);
+        let ws = websocket::WsConnection::new(ws_url)?;
+        self.state.borrow_mut().ws = Some(ws);
         Ok(())
     }
 
     /// Disconnect from the PTY server.
     pub fn disconnect(&mut self) {
-        self.ws = None;
+        self.state.borrow_mut().ws = None;
+    }
+
+    /// Feed data directly into the terminal (for replay/local input, no PTY).
+    pub fn feed(&self, data: &[u8]) {
+        if let Ok(mut app) = self.state.try_borrow_mut() {
+            app.local_data.push(data.to_vec());
+            app.dirty = true;
+        }
     }
 
     /// Write data to the PTY (send input).
     pub fn write(&self, data: &[u8]) {
-        if let Some(ws) = &self.ws {
-            ws.send_pty_data(data);
+        if let Ok(mut app) = self.state.try_borrow_mut() {
+            if let Some(ws) = &mut app.ws {
+                ws.send_pty_data(data);
+            }
         }
     }
 
     /// Send a resize message to the server.
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        self.state.borrow_mut().terminal.resize(cols, rows);
-        self.state.borrow_mut().dirty = true;
-        if let Some(ws) = &self.ws {
+        let mut app = self.state.borrow_mut();
+        app.terminal.resize(cols, rows);
+        app.dirty = true;
+        if let Some(ws) = &mut app.ws {
             ws.send_resize(cols, rows, 0, 0);
         }
     }
@@ -166,12 +159,6 @@ impl AlacrittyTerminal {
         self.state.borrow().terminal.rows()
     }
 
-    /// Feed raw bytes into the terminal as if received from a PTY.
-    /// Useful for demos, replays, or custom data sources without WebSocket.
-    pub fn feed(&self, data: &[u8]) {
-        self.incoming_data.borrow_mut().push(data.to_vec());
-    }
-
     /// Clean up resources.
     pub fn dispose(self) {
         drop(self);
@@ -182,33 +169,38 @@ impl AlacrittyTerminal {
     /// Start the requestAnimationFrame render loop.
     fn start_render_loop(&self) {
         let state = self.state.clone();
-        let incoming = self.incoming_data.clone();
         let callback = Rc::new(RefCell::new(None::<Closure<dyn FnMut()>>));
         let callback_clone = callback.clone();
 
         *callback.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-            // Swap the incoming queue with an empty vec to minimize borrow time.
-            let chunks = {
-                let mut q = incoming.borrow_mut();
-                if q.is_empty() {
-                    Vec::new()
-                } else {
-                    std::mem::take(&mut *q)
+            // All data processing and rendering in a single borrow.
+            if let Ok(mut app) = state.try_borrow_mut() {
+                // Flush pending outgoing messages once the connection is open.
+                if let Some(ws) = &mut app.ws {
+                    ws.flush_pending();
                 }
-            }; // RefMut dropped here — incoming is no longer borrowed.
 
-            if !chunks.is_empty() {
-                let mut app = state.borrow_mut();
-                for chunk in &chunks {
-                    app.terminal.process_bytes(chunk);
+                // Drain WebSocket data (polled from JS-side queue, no WASM callbacks).
+                if let Some(ws) = &app.ws {
+                    let ws_chunks = ws.drain_incoming();
+                    if !ws_chunks.is_empty() {
+                        for chunk in ws_chunks {
+                            app.terminal.process_bytes(&chunk);
+                        }
+                        app.dirty = true;
+                    }
                 }
-                app.dirty = true;
-                drop(app); // Explicitly drop before render.
-            }
 
-            // Render if dirty.
-            {
-                let mut app = state.borrow_mut();
+                // Drain locally-fed data.
+                if !app.local_data.is_empty() {
+                    let local: Vec<Vec<u8>> = app.local_data.drain(..).collect();
+                    for chunk in local {
+                        app.terminal.process_bytes(&chunk);
+                    }
+                    app.dirty = true;
+                }
+
+                // Render if dirty.
                 if app.dirty {
                     let term = app.terminal.term().clone();
                     let term_guard = term.lock();

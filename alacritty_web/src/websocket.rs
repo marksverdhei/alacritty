@@ -1,139 +1,136 @@
 //! WebSocket client for PTY communication.
 //!
-//! Binary protocol:
-//! - 0x00 + bytes = PTY data (bidirectional)
-//! - 0x01 + 4x u16 LE (cols, rows, cell_w, cell_h) = resize (client->server)
-//! - 0x02 + optional exit code = child exited (server->client)
+//! The WebSocket is managed entirely from JavaScript to avoid wasm-bindgen
+//! closure reentrancy issues. Data is queued in a JS-side Array and polled
+//! from the WASM render loop.
 
-use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
-use web_sys::{BinaryType, MessageEvent, WebSocket};
+use web_sys::WebSocket;
 
 const MSG_PTY_DATA: u8 = 0x00;
 const MSG_RESIZE: u8 = 0x01;
-const MSG_CHILD_EXIT: u8 = 0x02;
 
 /// WebSocket connection to the PTY server.
+///
+/// All event handlers are pure JavaScript (via js_sys::Function / eval),
+/// so they never call into WASM and can't trigger reentrant closure crashes.
 pub struct WsConnection {
     ws: WebSocket,
-    /// Whether the WebSocket connection is open and ready to send data.
-    open: Rc<RefCell<bool>>,
-    /// Messages queued before the connection was open.
-    pending: Rc<RefCell<VecDeque<Vec<u8>>>>,
-    _on_open: Closure<dyn FnMut(JsValue)>,
-    _on_message: Closure<dyn FnMut(MessageEvent)>,
-    _on_error: Closure<dyn FnMut(web_sys::ErrorEvent)>,
-    _on_close: Closure<dyn FnMut(web_sys::CloseEvent)>,
+    /// Incoming data queue, filled by JS onmessage handler, drained by WASM.
+    incoming: Rc<js_sys::Array>,
+    /// Outgoing messages queued before the connection was open.
+    pending: Vec<Vec<u8>>,
+    /// Whether we've already flushed pending messages after open.
+    flushed: bool,
 }
 
 impl WsConnection {
-    /// Create a new WebSocket connection with callbacks for connection open and incoming PTY data.
-    pub fn new<F, G>(url: &str, on_open: G, on_pty_data: F) -> Result<Self, JsError>
-    where
-        F: Fn(&[u8]) + 'static,
-        G: FnOnce() + 'static,
-    {
+    pub fn new(url: &str) -> Result<Self, JsError> {
         let ws = WebSocket::new(url).map_err(|e| JsError::new(&format!("{e:?}")))?;
-        ws.set_binary_type(BinaryType::Arraybuffer);
+        ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
-        let open = Rc::new(RefCell::new(false));
-        let pending: Rc<RefCell<VecDeque<Vec<u8>>>> = Rc::new(RefCell::new(VecDeque::new()));
-
-        // onopen: mark as ready, flush pending messages, call user callback.
-        let open_flag = open.clone();
-        let pending_flush = pending.clone();
-        let ws_for_open = ws.clone();
-        let on_open_cell = RefCell::new(Some(on_open));
-        let on_open_closure = Closure::wrap(Box::new(move |_: JsValue| {
-            log::info!("WebSocket connection opened");
-            *open_flag.borrow_mut() = true;
-
-            // Drain pending messages without holding the borrow during send.
-            let pending_msgs: Vec<Vec<u8>> = pending_flush.borrow_mut().drain(..).collect();
-            for msg in pending_msgs {
-                if let Err(e) = ws_for_open.send_with_u8_array(&msg) {
-                    log::error!("WebSocket send error while flushing pending: {e:?}");
-                }
-            }
-
-            // Call the user's on_open callback (once).
-            if let Some(cb) = on_open_cell.borrow_mut().take() {
-                cb();
-            }
-        }) as Box<dyn FnMut(JsValue)>);
-
-        let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
-            if let Ok(buf) = event.data().dyn_into::<js_sys::ArrayBuffer>() {
-                let arr = js_sys::Uint8Array::new(&buf);
-                let data = arr.to_vec();
-                if data.is_empty() {
-                    return;
-                }
-
-                match data[0] {
-                    MSG_PTY_DATA => {
-                        if data.len() > 1 {
-                            on_pty_data(&data[1..]);
-                        }
-                    }
-                    MSG_CHILD_EXIT => {
-                        log::info!("Child process exited");
-                    }
-                    other => {
-                        log::warn!("Unknown message type: {other}");
-                    }
-                }
-            }
-        }) as Box<dyn FnMut(MessageEvent)>);
-
-        let on_error = Closure::wrap(Box::new(move |e: web_sys::ErrorEvent| {
-            log::error!("WebSocket error: {:?}", e.message());
-        }) as Box<dyn FnMut(web_sys::ErrorEvent)>);
-
-        let on_close = Closure::wrap(Box::new(move |e: web_sys::CloseEvent| {
-            log::info!(
-                "WebSocket closed: code={}, reason={}",
-                e.code(),
-                e.reason()
-            );
-        }) as Box<dyn FnMut(web_sys::CloseEvent)>);
-
-        ws.set_onopen(Some(on_open_closure.as_ref().unchecked_ref()));
-        ws.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
-        ws.set_onerror(Some(on_error.as_ref().unchecked_ref()));
-        ws.set_onclose(Some(on_close.as_ref().unchecked_ref()));
+        let incoming = Rc::new(js_sys::Array::new());
+        // Use JS-side event handlers to avoid wasm-bindgen closure reentrancy.
+        // Data is pushed into a JS Array that WASM polls each frame.
+        Self::setup_js_handlers(&ws, &incoming)?;
 
         Ok(Self {
             ws,
-            open,
-            pending,
-            _on_open: on_open_closure,
-            _on_message: on_message,
-            _on_error: on_error,
-            _on_close: on_close,
+            incoming,
+            pending: Vec::new(),
+            flushed: false,
         })
     }
 
-    /// Send a raw binary message, queuing it if the socket is not yet open.
-    fn send_or_queue(&self, msg: Vec<u8>) {
-        if *self.open.borrow() {
+    fn setup_js_handlers(ws: &WebSocket, incoming: &js_sys::Array) -> Result<(), JsError> {
+        // Create JS handler functions that never call into WASM.
+        // onmessage: extract PTY data bytes and push to the shared array.
+        let onmessage_fn = js_sys::Function::new_with_args(
+            "queue",
+            "return function(e) {
+                if (e.data instanceof ArrayBuffer) {
+                    var a = new Uint8Array(e.data);
+                    if (a.length > 1 && a[0] === 0) {
+                        queue.push(a.slice(1));
+                    }
+                }
+            }",
+        );
+        let handler = onmessage_fn
+            .call1(&JsValue::NULL, incoming)
+            .map_err(|e| JsError::new(&format!("Failed to create onmessage: {e:?}")))?;
+        ws.set_onmessage(Some(handler.unchecked_ref()));
+
+        // onopen: log. Pending messages are flushed by send_or_queue polling.
+        let onopen_fn =
+            js_sys::Function::new_no_args("console.log('WebSocket connection opened')");
+        ws.set_onopen(Some(&onopen_fn));
+
+        // onerror: log.
+        let onerror_fn = js_sys::Function::new_no_args("console.log('WebSocket error')");
+        ws.set_onerror(Some(&onerror_fn));
+
+        // onclose: log.
+        let onclose_fn = js_sys::Function::new_with_args(
+            "e",
+            "console.log('WebSocket closed: code=' + e.code)",
+        );
+        ws.set_onclose(Some(&onclose_fn));
+
+        Ok(())
+    }
+
+    /// Drain all incoming PTY data chunks from the JS queue.
+    pub fn drain_incoming(&self) -> Vec<Vec<u8>> {
+        let len = self.incoming.length();
+        if len == 0 {
+            return Vec::new();
+        }
+
+        let mut chunks = Vec::with_capacity(len as usize);
+        for _ in 0..len {
+            let val = self.incoming.shift();
+            if let Some(arr) = val.dyn_ref::<js_sys::Uint8Array>() {
+                chunks.push(arr.to_vec());
+            }
+        }
+        chunks
+    }
+
+    /// Check if the WebSocket is open.
+    pub fn is_open(&self) -> bool {
+        self.ws.ready_state() == WebSocket::OPEN
+    }
+
+    /// Flush pending messages if the connection just became open.
+    /// Called from the render loop each frame.
+    pub fn flush_pending(&mut self) {
+        if self.flushed || !self.is_open() {
+            return;
+        }
+        self.flushed = true;
+        for msg in self.pending.drain(..) {
+            if let Err(e) = self.ws.send_with_u8_array(&msg) {
+                log::error!("WebSocket send error while flushing: {e:?}");
+            }
+        }
+    }
+
+    /// Send or queue a raw binary message.
+    fn send_or_queue(&mut self, msg: Vec<u8>) {
+        if self.is_open() {
             if let Err(e) = self.ws.send_with_u8_array(&msg) {
                 log::error!("WebSocket send error: {e:?}");
             }
         } else {
-            log::warn!(
-                "WebSocket not yet open, queuing message ({} bytes)",
-                msg.len()
-            );
-            self.pending.borrow_mut().push_back(msg);
+            self.pending.push(msg);
         }
     }
 
     /// Send PTY data to the server.
-    pub fn send_pty_data(&self, data: &[u8]) {
+    pub fn send_pty_data(&mut self, data: &[u8]) {
         let mut msg = Vec::with_capacity(1 + data.len());
         msg.push(MSG_PTY_DATA);
         msg.extend_from_slice(data);
@@ -141,7 +138,7 @@ impl WsConnection {
     }
 
     /// Send a resize message to the server.
-    pub fn send_resize(&self, cols: u16, rows: u16, cell_w: u16, cell_h: u16) {
+    pub fn send_resize(&mut self, cols: u16, rows: u16, cell_w: u16, cell_h: u16) {
         let mut msg = Vec::with_capacity(9);
         msg.push(MSG_RESIZE);
         msg.extend_from_slice(&cols.to_le_bytes());
