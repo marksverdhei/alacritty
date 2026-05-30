@@ -1,0 +1,30 @@
+[     106ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1542
+[     108ms] [INFO] Canvas2D renderer[0]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[     108ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[     108ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1542
+[     600ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1542
+[  300141ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3435832ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3435833ms] [INFO] Canvas2D renderer[1]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3435833ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3435834ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3435835ms] Error: Attempt to use a moved value
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:444:40)
+    at ResizeObserver.syncSize (http://localhost:5191/src/routes/compare/+page.svelte?t=1776995958776:241:28)
+[ 3435845ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error in connection establishment: net::ERR_SOCKET_NOT_CONNECTED @ http://localhost:5191/src/routes/compare/+page.svelte?t=1776999402603:313
+[ 3445820ms] Error: Attempt to use a moved value
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:444:40)
+    at ResizeObserver.syncSize (http://localhost:5191/src/routes/compare/+page.svelte?t=1776999402603:283:28)
+[ 3445820ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3445822ms] [INFO] Canvas2D renderer[2]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3445822ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3445822ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3445829ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error in connection establishment: net::ERR_SOCKET_NOT_CONNECTED @ http://localhost:5191/src/routes/compare/+page.svelte?t=1776999412591:300
+[ 3453949ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3453950ms] [INFO] Canvas2D renderer[3]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3453950ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3453950ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1542
+[ 3453957ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error in connection establishment: net::ERR_SOCKET_NOT_CONNECTED @ http://localhost:5191/src/routes/compare/+page.svelte?t=1776999420730:319
+[ 3453963ms] Error: Attempt to use a moved value
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:444:40)
+    at ResizeObserver.syncSize (http://localhost:5191/src/routes/compare/+page.svelte?t=1776999412591:270:28)

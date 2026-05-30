@@ -1,0 +1,18 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Alacritty WASM vs xterm.js" [level=1] [ref=e5]
+    - paragraph [ref=e6]: Same PTY, tee'd into both terminals. Type in either pane — both render the shell's response.
+    - generic [ref=e7]:
+      - generic [ref=e8]: connecting
+      - generic [ref=e9]: "in: 0B"
+      - generic [ref=e10]: "out: 0B"
+      - generic [ref=e11]: "xterm write: 0.00ms"
+      - generic [ref=e12]: "alacritty feed: 0.00ms"
+    - button "Run 1MB stress test" [ref=e15] [cursor=pointer]
+  - generic [ref=e16]:
+    - generic [ref=e18]:
+      - text: xterm.js
+      - generic [ref=e20]: DOM + Canvas renderer
+    - generic [ref=e24]:
+      - text: Alacritty (WASM)
+      - generic [ref=e26]: Rust → wasm32 → Canvas2D

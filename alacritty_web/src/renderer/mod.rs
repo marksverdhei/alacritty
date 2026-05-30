@@ -2,25 +2,41 @@
 
 pub mod canvas2d;
 pub mod colors;
-#[allow(dead_code)]
+#[cfg(feature = "wgpu")]
 mod glyph_cache;
-#[allow(dead_code)]
+#[cfg(feature = "wgpu")]
 mod rects;
-#[allow(dead_code)]
+#[cfg(feature = "wgpu")]
 mod text;
 
-use alacritty_terminal::grid::Dimensions;
+#[cfg(feature = "wgpu")]
 use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::term::Term;
+#[cfg(feature = "wgpu")]
 use alacritty_terminal::vte::ansi::NamedColor;
 
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "wgpu")]
 use web_sys::HtmlCanvasElement;
 
 use crate::terminal::WebEventProxy;
 
+/// Trait abstracting terminal rendering backends.
+pub trait TerminalRenderer {
+    fn render(&mut self, term: &Term<WebEventProxy>);
+    fn resize(&mut self, width: u32, height: u32);
+    fn resize_backing_store(&mut self);
+    fn cell_width(&self) -> f32;
+    fn cell_height(&self) -> f32;
+    fn set_font_size(&mut self, size_px: f32);
+    fn set_font_family(&mut self, family: &str);
+    fn set_line_height_multiplier(&mut self, multiplier: f32);
+    fn set_focused(&mut self, focused: bool);
+    fn backend_name(&self) -> &'static str;
+}
+
 /// The main wgpu renderer.
-#[allow(dead_code)]
+#[cfg(feature = "wgpu")]
 pub struct WgpuRenderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -31,14 +47,15 @@ pub struct WgpuRenderer {
     glyph_cache: Option<glyph_cache::GlyphCache>,
     cell_width: f32,
     cell_height: f32,
+    dpr: f64,
 }
 
-#[allow(dead_code)]
+#[cfg(feature = "wgpu")]
 impl WgpuRenderer {
     /// Initialize wgpu from a canvas element.
     pub async fn new(canvas: &HtmlCanvasElement) -> Result<Self, JsError> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
+            backends: wgpu::Backends::BROWSER_WEBGPU,
             ..Default::default()
         });
 
@@ -69,8 +86,12 @@ impl WgpuRenderer {
             .await
             .map_err(|e| JsError::new(&format!("Failed to create device: {e}")))?;
 
-        let width = canvas.client_width().max(1) as u32;
-        let height = canvas.client_height().max(1) as u32;
+        // Apply device pixel ratio for HiDPI.
+        let dpr = web_sys::window().map(|w| w.device_pixel_ratio()).unwrap_or(1.0);
+        let css_width = canvas.client_width().max(1) as u32;
+        let css_height = canvas.client_height().max(1) as u32;
+        let width = (css_width as f64 * dpr) as u32;
+        let height = (css_height as f64 * dpr) as u32;
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps
@@ -106,7 +127,7 @@ impl WgpuRenderer {
             .unwrap_or((8.0, 16.0));
 
         log::info!(
-            "wgpu renderer initialized: {width}x{height}, cell: {cell_width}x{cell_height}"
+            "wgpu renderer initialized: {width}x{height} (dpr={dpr}), cell: {cell_width}x{cell_height}"
         );
 
         Ok(Self {
@@ -119,20 +140,12 @@ impl WgpuRenderer {
             glyph_cache,
             cell_width,
             cell_height,
+            dpr,
         })
     }
 
-    /// Resize the rendering surface.
-    pub fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            self.surface_config.width = width;
-            self.surface_config.height = height;
-            self.surface.configure(&self.device, &self.surface_config);
-        }
-    }
-
-    /// Update render state from terminal grid.
-    pub fn update_from_terminal(&mut self, term: &Term<WebEventProxy>) {
+    /// Build instance data from terminal state and submit a GPU frame.
+    fn render_frame(&mut self, term: &Term<WebEventProxy>) -> Result<(), JsError> {
         let content = term.renderable_content();
         let term_colors = content.colors;
 
@@ -145,19 +158,16 @@ impl WgpuRenderer {
             let point = indexed.point;
             let cell = &indexed.cell;
 
-            // Skip wide char spacers.
             if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
                 continue;
             }
 
             let col = point.column.0 as f32;
-            let row = (point.line.0 as i32 + term.screen_lines() as i32) as f32;
+            let row = point.line.0 as f32;
 
-            // Resolve colors.
             let fg_rgb = colors::resolve_color(&cell.fg, term_colors);
             let bg_rgb = colors::resolve_color(&cell.bg, term_colors);
 
-            // Add background rect if not default.
             if bg_rgb != bg_color {
                 let width_mult = if cell.flags.contains(CellFlags::WIDE_CHAR) {
                     2.0
@@ -176,12 +186,10 @@ impl WgpuRenderer {
                 });
             }
 
-            // Skip empty/space cells for text rendering.
             if cell.c == ' ' || cell.c == '\t' || cell.c == '\0' {
                 continue;
             }
 
-            // Get glyph from cache.
             if let Some(cache) = &mut self.glyph_cache {
                 let glyph_key = glyph_cache::GlyphKey {
                     character: cell.c,
@@ -215,8 +223,7 @@ impl WgpuRenderer {
         let cursor_color = colors::default_named_color(NamedColor::Cursor);
         rect_instances.push(rects::RectInstance {
             pos_x: cursor.point.column.0 as f32 * self.cell_width,
-            pos_y: (cursor.point.line.0 as i32 + term.screen_lines() as i32) as f32
-                * self.cell_height,
+            pos_y: cursor.point.line.0 as f32 * self.cell_height,
             size_w: self.cell_width,
             size_h: self.cell_height,
             color_r: cursor_color.r as f32 / 255.0,
@@ -225,23 +232,25 @@ impl WgpuRenderer {
             color_a: 0.5,
         });
 
+        let vp_w = self.surface_config.width as f32;
+        let vp_h = self.surface_config.height as f32;
+
         // Update GPU buffers.
         self.rect_renderer
             .update_instances(&self.device, &rect_instances);
+        self.rect_renderer.update_projection(&self.queue, vp_w, vp_h);
         self.text_renderer.update_instances(
             &self.device,
             &self.queue,
             &text_instances,
             self.cell_width,
             self.cell_height,
-            self.surface_config.width as f32,
-            self.surface_config.height as f32,
+            vp_w,
+            vp_h,
             self.glyph_cache.as_ref(),
         );
-    }
 
-    /// Render a frame.
-    pub fn render(&mut self) -> Result<(), JsError> {
+        // Submit render pass.
         let output = self
             .surface
             .get_current_texture()
@@ -278,10 +287,7 @@ impl WgpuRenderer {
                 occlusion_query_set: None,
             });
 
-            // Draw rectangles (backgrounds, cursor, selection).
             self.rect_renderer.draw(&mut render_pass);
-
-            // Draw text.
             self.text_renderer.draw(&mut render_pass);
         }
 
@@ -290,13 +296,55 @@ impl WgpuRenderer {
 
         Ok(())
     }
+}
 
-    /// Cell dimensions.
-    pub fn cell_width(&self) -> f32 {
+#[cfg(feature = "wgpu")]
+impl TerminalRenderer for WgpuRenderer {
+    fn render(&mut self, term: &Term<WebEventProxy>) {
+        if let Err(e) = self.render_frame(term) {
+            log::warn!("wgpu render error: {e:?}");
+        }
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        let w = (width as f64 * self.dpr) as u32;
+        let h = (height as f64 * self.dpr) as u32;
+        if w > 0 && h > 0 {
+            self.surface_config.width = w;
+            self.surface_config.height = h;
+            self.surface.configure(&self.device, &self.surface_config);
+        }
+    }
+
+    fn resize_backing_store(&mut self) {
+        // wgpu backend resizes the surface via `resize` -- no separate backing store.
+    }
+
+    fn cell_width(&self) -> f32 {
         self.cell_width
     }
 
-    pub fn cell_height(&self) -> f32 {
+    fn cell_height(&self) -> f32 {
         self.cell_height
+    }
+
+    fn set_font_size(&mut self, _size_px: f32) {
+        // TODO: rebuild glyph cache with new font size.
+    }
+
+    fn set_font_family(&mut self, _family: &str) {
+        // TODO: rebuild glyph cache with new font family.
+    }
+
+    fn set_line_height_multiplier(&mut self, _multiplier: f32) {
+        // TODO: rebuild glyph cache with new line height.
+    }
+
+    fn set_focused(&mut self, _focused: bool) {
+        // TODO: mirror Canvas2D's hollow cursor shape in the wgpu backend.
+    }
+
+    fn backend_name(&self) -> &'static str {
+        "wgpu"
     }
 }

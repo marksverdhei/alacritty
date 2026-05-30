@@ -140,8 +140,10 @@ pub struct TextRenderer {
     pipeline_bg: wgpu::RenderPipeline,
     pipeline_text: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    bind_group: Option<wgpu::BindGroup>,
-    uniform_buffer: wgpu::Buffer,
+    bind_group_bg: Option<wgpu::BindGroup>,
+    bind_group_text: Option<wgpu::BindGroup>,
+    uniform_buffer_bg: wgpu::Buffer,
+    uniform_buffer_text: wgpu::Buffer,
     instance_buffer: Option<wgpu::Buffer>,
     instance_count: u32,
 }
@@ -277,8 +279,8 @@ impl TextRenderer {
             cache: None,
         });
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("text_uniform_buffer"),
+        let uniform_buffer_bg = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("text_uniform_buffer_bg"),
             contents: bytemuck::bytes_of(&TextUniforms {
                 projection: orthographic_projection(800.0, 600.0),
                 cell_width: 8.0,
@@ -289,12 +291,26 @@ impl TextRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        let uniform_buffer_text = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("text_uniform_buffer_text"),
+            contents: bytemuck::bytes_of(&TextUniforms {
+                projection: orthographic_projection(800.0, 600.0),
+                cell_width: 8.0,
+                cell_height: 16.0,
+                pass_type: 1,
+                _padding: 0,
+            }),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
         Self {
             pipeline_bg,
             pipeline_text,
             bind_group_layout,
-            bind_group: None,
-            uniform_buffer,
+            bind_group_bg: None,
+            bind_group_text: None,
+            uniform_buffer_bg,
+            uniform_buffer_text,
             instance_buffer: None,
             instance_count: 0,
         }
@@ -314,19 +330,32 @@ impl TextRenderer {
     ) {
         self.instance_count = instances.len() as u32;
 
-        // Update uniforms.
-        let uniforms = TextUniforms {
+        // Update uniforms for both passes.
+        let uniforms_bg = TextUniforms {
             projection: orthographic_projection(viewport_width, viewport_height),
             cell_width,
             cell_height,
-            pass_type: 0, // Updated per-pass in draw.
+            pass_type: 0,
             _padding: 0,
         };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        let uniforms_text = TextUniforms {
+            projection: orthographic_projection(viewport_width, viewport_height),
+            cell_width,
+            cell_height,
+            pass_type: 1,
+            _padding: 0,
+        };
+        queue.write_buffer(&self.uniform_buffer_bg, 0, bytemuck::bytes_of(&uniforms_bg));
+        queue.write_buffer(
+            &self.uniform_buffer_text,
+            0,
+            bytemuck::bytes_of(&uniforms_text),
+        );
 
         if instances.is_empty() {
             self.instance_buffer = None;
-            self.bind_group = None;
+            self.bind_group_bg = None;
+            self.bind_group_text = None;
             return;
         }
 
@@ -336,15 +365,33 @@ impl TextRenderer {
             usage: wgpu::BufferUsages::VERTEX,
         }));
 
-        // Create bind group with atlas texture.
+        // Create bind groups with atlas texture (one per pass).
         if let Some(cache) = glyph_cache {
-            self.bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("text_bind_group"),
+            self.bind_group_bg = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("text_bind_group_bg"),
                 layout: &self.bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: self.uniform_buffer.as_entire_binding(),
+                        resource: self.uniform_buffer_bg.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(cache.atlas_view()),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(cache.atlas_sampler()),
+                    },
+                ],
+            }));
+            self.bind_group_text = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("text_bind_group_text"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer_text.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
@@ -365,21 +412,25 @@ impl TextRenderer {
             return;
         }
 
-        let (Some(buf), Some(bind_group)) = (&self.instance_buffer, &self.bind_group) else {
+        let Some(buf) = &self.instance_buffer else {
             return;
         };
 
-        // Background pass.
-        render_pass.set_pipeline(&self.pipeline_bg);
-        render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.set_vertex_buffer(0, buf.slice(..));
-        render_pass.draw(0..6, 0..self.instance_count);
+        // Background pass (pass_type = 0).
+        if let Some(bind_group_bg) = &self.bind_group_bg {
+            render_pass.set_pipeline(&self.pipeline_bg);
+            render_pass.set_bind_group(0, bind_group_bg, &[]);
+            render_pass.set_vertex_buffer(0, buf.slice(..));
+            render_pass.draw(0..6, 0..self.instance_count);
+        }
 
-        // Text pass.
-        render_pass.set_pipeline(&self.pipeline_text);
-        render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.set_vertex_buffer(0, buf.slice(..));
-        render_pass.draw(0..6, 0..self.instance_count);
+        // Text pass (pass_type = 1).
+        if let Some(bind_group_text) = &self.bind_group_text {
+            render_pass.set_pipeline(&self.pipeline_text);
+            render_pass.set_bind_group(0, bind_group_text, &[]);
+            render_pass.set_vertex_buffer(0, buf.slice(..));
+            render_pass.draw(0..6, 0..self.instance_count);
+        }
     }
 }
 

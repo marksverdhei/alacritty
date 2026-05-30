@@ -1,0 +1,5 @@
+[      41ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.png:0
+[     118ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5173/pkg/alacritty_web.js:672
+[     713ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=582x548 @ http://localhost:5173/pkg/alacritty_web.js:672
+[     714ms] [INFO] Initial grid: 72x32 @ http://localhost:5173/pkg/alacritty_web.js:672
+[     752ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/routes/compare/+page.svelte:675

@@ -1,0 +1,7 @@
+[      23ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     186ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1478
+[     679ms] [INFO] Canvas2D renderer[0]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1478
+[     680ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1478
+[     681ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1478
+[    1145ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1478
+[   26287ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1478

@@ -104,6 +104,11 @@ impl WsConnection {
         self.ws.ready_state() == WebSocket::OPEN
     }
 
+    /// Raw WebSocket `readyState` (0=connecting, 1=open, 2=closing, 3=closed).
+    pub fn ready_state(&self) -> u16 {
+        self.ws.ready_state()
+    }
+
     /// Flush pending messages if the connection just became open.
     /// Called from the render loop each frame.
     pub fn flush_pending(&mut self) {

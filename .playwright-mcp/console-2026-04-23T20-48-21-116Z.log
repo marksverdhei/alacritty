@@ -1,0 +1,23 @@
+[      83ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     207ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     810ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=584x292 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     811ms] [INFO] Initial grid: 73x17 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     812ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     812ms] [LOG] [DBG] created AlacrittyTerminal for: WebContainer Terminal @ http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:99
+[     812ms] [LOG] [DBG] initWebContainer for: WebContainer Terminal @ http://localhost:5191/src/routes/+page.svelte?t=1776976894711:92
+[     838ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     838ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=584x292 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     838ms] [INFO] Initial grid: 73x17 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     838ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     839ms] [LOG] [DBG] created AlacrittyTerminal for: Demo Terminal @ http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:99
+[     839ms] [LOG] [DBG] startReplay called for: Demo Terminal @ http://localhost:5191/src/routes/+page.svelte?t=1776976894711:66
+[     839ms] [LOG] [DBG] runReplay target: Demo Terminal @ http://localhost:5191/src/routes/+page.svelte?t=1776976894711:75
+[     840ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     840ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=584x292 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     841ms] [INFO] Initial grid: 73x17 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     841ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     841ms] [LOG] [DBG] created AlacrittyTerminal for: WebSocket Terminal @ http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:99
+[     848ms] [LOG] WebSocket connection opened @ :2
+[    1447ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1269
+[    2515ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://vdi9g7cladzvvcrar1t4nj9na6x6u0-ruub.w-corp-staticblitz.com/blitz.4c73681d.js:18
+[    4269ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.4c73681d.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0

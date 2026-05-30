@@ -1,0 +1,119 @@
+[     541ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     964ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1268
+[     982ms] [INFO] Canvas2D renderer: cell=8.399963x20, dpr=1, canvas=570x285 @ http://localhost:5191/pkg/alacritty_web.js:1268
+[     983ms] [INFO] Initial grid: 67x14 @ http://localhost:5191/pkg/alacritty_web.js:1268
+[     983ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1013ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1013ms] [INFO] Canvas2D renderer: cell=8.399963x20, dpr=1, canvas=570x285 @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1013ms] [INFO] Initial grid: 67x14 @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1013ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1015ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1016ms] [INFO] Canvas2D renderer: cell=8.399963x20, dpr=1, canvas=570x285 @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1017ms] [INFO] Initial grid: 67x14 @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1017ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1268
+[    1027ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5191/pkg/alacritty_web.js:1418
+[    1027ms] [LOG] WebSocket error @ :2
+[    1027ms] [LOG] WebSocket closed: code=1006 @ :2
+[    6000ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://vdi9g7cladzvvcrar1t4nj9na6x6u0-ruub.w-corp-staticblitz.com/blitz.4c73681d.js:18
+[    7144ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.4c73681d.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0
+[   30668ms] RuntimeError: table index is out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2687]:0x212410
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[812]:0x12a173
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3042]:0x218c18
+    at __wbg_adapter_13 (http://localhost:5191/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5191/pkg/alacritty_web.js:253:20)
+[   30669ms] RuntimeError: table index is out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2687]:0x212410
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[812]:0x12a173
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3042]:0x218c18
+    at __wbg_adapter_13 (http://localhost:5191/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5191/pkg/alacritty_web.js:253:20)
+[   30669ms] RuntimeError: table index is out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2687]:0x212410
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[812]:0x12a173
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3042]:0x218c18
+    at __wbg_adapter_13 (http://localhost:5191/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5191/pkg/alacritty_web.js:253:20)
+[   59338ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[1385]:0x1c2089
+    at AlacrittyTerminal.resize (http://localhost:5191/pkg/alacritty_web.js:508:14)
+    at ResizeObserver.<anonymous> (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:111:16)
+[   59338ms] Error: recursive use of an object detected which would lead to unsafe aliasing in rust
+    at imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 (http://localhost:5191/pkg/alacritty_web.js:2425:15)
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3637]:0x220395
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3636]:0x22038a
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[1633]:0x1df1fa
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:399:26)
+    at ResizeObserver.<anonymous> (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:100:28)
+[   59338ms] Error: recursive use of an object detected which would lead to unsafe aliasing in rust
+    at imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 (http://localhost:5191/pkg/alacritty_web.js:2425:15)
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3637]:0x220395
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3636]:0x22038a
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[1633]:0x1df1fa
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:399:26)
+    at ResizeObserver.<anonymous> (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:100:28)
+[   65539ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.feed (http://localhost:5191/pkg/alacritty_web.js:481:22)
+    at runReplay (http://localhost:5191/src/routes/+page.svelte:82:19)
+[   69020ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.write (http://localhost:5191/pkg/alacritty_web.js:498:22)
+    at HTMLCanvasElement.handleKeydown (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:80:13)
+[   69056ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.write (http://localhost:5191/pkg/alacritty_web.js:498:22)
+    at HTMLCanvasElement.handleKeydown (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:80:13)
+[   69100ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.write (http://localhost:5191/pkg/alacritty_web.js:498:22)
+    at HTMLCanvasElement.handleKeydown (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:80:13)
+[   69260ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.write (http://localhost:5191/pkg/alacritty_web.js:498:22)
+    at HTMLCanvasElement.handleKeydown (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:80:13)
+[   69285ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.write (http://localhost:5191/pkg/alacritty_web.js:498:22)
+    at HTMLCanvasElement.handleKeydown (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:80:13)
+[   69335ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.write (http://localhost:5191/pkg/alacritty_web.js:498:22)
+    at HTMLCanvasElement.handleKeydown (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:80:13)
+[   69357ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.write (http://localhost:5191/pkg/alacritty_web.js:498:22)
+    at HTMLCanvasElement.handleKeydown (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte:80:13)
+[   74111ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87533
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3545]:0x21d698
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2709]:0x212a8e
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.feed (http://localhost:5191/pkg/alacritty_web.js:481:22)
+    at http://localhost:5191/src/routes/+page.svelte:116:16

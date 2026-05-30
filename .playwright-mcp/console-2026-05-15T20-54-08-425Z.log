@@ -1,0 +1,22 @@
+[      86ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     352ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     906ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=584x292 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     907ms] [INFO] Initial grid: 73x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     909ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     923ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     925ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=584x292 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     925ms] [INFO] Initial grid: 73x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     925ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     926ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     927ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=584x292 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     927ms] [INFO] Initial grid: 73x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     927ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     966ms] [LOG] WebSocket connection opened @ :2
+[    1576ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    2660ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://igikv8ex74pho2vhkgo28y3c873zlz-niol.w-corp-staticblitz.com/blitz.4c73681d.js:18
+[    4452ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.4c73681d.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0
+[   16603ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[   16604ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[   16605ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[   16605ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[   17253ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1608

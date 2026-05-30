@@ -17,6 +17,7 @@ pub struct GlyphKey {
 
 /// Cached glyph location in the atlas.
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub struct GlyphEntry {
     /// UV coordinates in the atlas (normalized 0-1).
     pub uv_x: f32,

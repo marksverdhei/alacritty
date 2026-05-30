@@ -1,0 +1,69 @@
+[      99ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     684ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1143ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1144ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1154ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1169ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1170ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1171ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1171ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1174ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1174ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1175ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1175ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1175ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1176ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1176ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1179ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1180ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1181ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=594x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1181ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1183ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1184ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1190ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1190ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1191ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1191ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1192ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1192ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1194ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1196ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1197ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=452x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1198ms] [INFO] Initial grid: 56x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1198ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1200ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1202ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1202ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1203ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1203ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1204ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1204ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1204ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1206ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1207ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1207ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1207ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1207ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1208ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=594x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1208ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1209ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1209ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1210ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1210ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1210ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1214ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1216ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1216ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1217ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1217ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1218ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1219ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1219ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1219ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1220ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1220ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1220ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1220ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1221ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=592x300 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1221ms] [INFO] Initial grid: 74x17 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    1221ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608

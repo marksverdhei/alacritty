@@ -1,0 +1,78 @@
+[     113ms] [WARNING] No available adapters. @ http://localhost:5173/:0
+[     113ms] [WARNING] No available adapters. @ http://localhost:5173/:0
+[     113ms] [WARNING] No available adapters. @ http://localhost:5173/:0
+[     115ms] Error: FnOnce called more than once
+    at imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 (http://localhost:5173/pkg/alacritty_web.js:2414:15)
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3613]:0x222d58
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[1296]:0x1b7ab3
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2962]:0x21ad3f
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3350]:0x21dc75
+    at __wbg_adapter_8 (http://localhost:5173/pkg/alacritty_web.js:316:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)
+[     118ms] Error: FnOnce called more than once
+    at imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 (http://localhost:5173/pkg/alacritty_web.js:2414:15)
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3613]:0x222d58
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[1296]:0x1b7ab3
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2962]:0x21ad3f
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3350]:0x21dc75
+    at __wbg_adapter_8 (http://localhost:5173/pkg/alacritty_web.js:316:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)
+[    1308ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://k03e2io1v3fx9wvj0vr8qd5q58o56n-fkdo.w-corp-staticblitz.com/blitz.3b7d1e54.js:18
+[    3495ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.3b7d1e54.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0
+[   30116ms] RuntimeError: memory access out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2906]:0x21a239
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2746]:0x21640c
+    at CLOSURE_DTORS (http://localhost:5173/pkg/alacritty_web.js:238:45)
+[   30116ms] RuntimeError: memory access out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2906]:0x21a239
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2746]:0x21640c
+    at CLOSURE_DTORS (http://localhost:5173/pkg/alacritty_web.js:238:45)
+[   30116ms] RuntimeError: memory access out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2906]:0x21a239
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2746]:0x21640c
+    at CLOSURE_DTORS (http://localhost:5173/pkg/alacritty_web.js:238:45)
+[   30116ms] [ERROR] panicked at /usr/src/debug/rust/rustc-1.93.1-src/vendor/dlmalloc-0.2.11/src/dlmalloc.rs:1207:13:
+assertion failed: psize <= size + max_overhead
+
+Stack:
+
+Error
+    at imports.wbg.__wbg_new_8a6f238a6ece86ea (http://localhost:5173/pkg/alacritty_web.js:1400:21)
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3668]:0x223618
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[1691]:0x1e7511
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2672]:0x2151b6
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3300]:0x21d817
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3449]:0x21f196
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2746]:0x216423
+    at CLOSURE_DTORS (http://localhost:5173/pkg/alacritty_web.js:238:45)
+
+ @ http://localhost:5173/pkg/alacritty_web.js:1060
+[   30117ms] RuntimeError: unreachable
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[1691]:0x1e7537
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2672]:0x2151b6
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3300]:0x21d817
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3449]:0x21f196
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2746]:0x216423
+    at CLOSURE_DTORS (http://localhost:5173/pkg/alacritty_web.js:238:45)
+[   30117ms] RuntimeError: memory access out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2906]:0x21a239
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2746]:0x21640c
+    at CLOSURE_DTORS (http://localhost:5173/pkg/alacritty_web.js:238:45)
+[   30118ms] RuntimeError: table index is out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2670]:0x215041
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[806]:0x12c514
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2979]:0x21b0b8
+    at __wbg_adapter_11 (http://localhost:5173/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)
+[   30118ms] RuntimeError: table index is out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2670]:0x215041
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[806]:0x12c514
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2979]:0x21b0b8
+    at __wbg_adapter_11 (http://localhost:5173/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)
+[   30118ms] RuntimeError: table index is out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2670]:0x215041
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[806]:0x12c514
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2979]:0x21b0b8
+    at __wbg_adapter_11 (http://localhost:5173/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)

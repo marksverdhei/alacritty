@@ -1,0 +1,43 @@
+[      41ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.png:0
+[     555ms] [WARNING] No available adapters. @ http://localhost:5173/:0
+[     566ms] [WARNING] No available adapters. @ http://localhost:5173/:0
+[     578ms] [WARNING] No available adapters. @ http://localhost:5173/:0
+[     581ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error during WebSocket handshake: net::ERR_CONNECTION_RESET @ http://localhost:5173/pkg/alacritty_web.js:1407
+[    1803ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://k03e2io1v3fx9wvj0vr8qd5q58o56n-fkdo.w-corp-staticblitz.com/blitz.3b7d1e54.js:18
+[    3991ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.3b7d1e54.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0
+[   30161ms] [WARNING] request_animation_frame failed: JsValue(TypeError: Failed to execute 'requestAnimationFrame' on 'Window': parameter 1 is not of type 'Function'.
+TypeError: parameter 1 is not of type 'Function'.
+    at http://localhost:5173/pkg/alacritty_web.js:1514:26
+    at handleError (http://localhost:5173/pkg/alacritty_web.js:41:18)
+    at imports.wbg.__wbg_requestAnimationFrame_ddc84a7def436784 (http://localhost:5173/pkg/alacritty_web.js:1513:84)
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2670]:0x215043
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[806]:0x12c514
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2979]:0x21b0b8
+    at __wbg_adapter_11 (http://localhost:5173/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)) @ http://localhost:5173/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=283e358f:3298
+[   30162ms] [WARNING] request_animation_frame failed: JsValue(TypeError: Failed to execute 'requestAnimationFrame' on 'Window': parameter 1 is not of type 'Function'.
+TypeError: parameter 1 is not of type 'Function'.
+    at http://localhost:5173/pkg/alacritty_web.js:1514:26
+    at handleError (http://localhost:5173/pkg/alacritty_web.js:41:18)
+    at imports.wbg.__wbg_requestAnimationFrame_ddc84a7def436784 (http://localhost:5173/pkg/alacritty_web.js:1513:84)
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2670]:0x215043
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[806]:0x12c514
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2979]:0x21b0b8
+    at __wbg_adapter_11 (http://localhost:5173/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)) @ http://localhost:5173/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=283e358f:3298
+[   30162ms] [WARNING] request_animation_frame failed: JsValue(TypeError: Failed to execute 'requestAnimationFrame' on 'Window': parameter 1 is not of type 'Function'.
+TypeError: parameter 1 is not of type 'Function'.
+    at http://localhost:5173/pkg/alacritty_web.js:1514:26
+    at handleError (http://localhost:5173/pkg/alacritty_web.js:41:18)
+    at imports.wbg.__wbg_requestAnimationFrame_ddc84a7def436784 (http://localhost:5173/pkg/alacritty_web.js:1513:84)
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2670]:0x215043
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[806]:0x12c514
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[2979]:0x21b0b8
+    at __wbg_adapter_11 (http://localhost:5173/pkg/alacritty_web.js:320:10)
+    at real (http://localhost:5173/pkg/alacritty_web.js:253:20)) @ http://localhost:5173/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=283e358f:3298
+[   76015ms] RuntimeError: memory access out of bounds
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[595]:0x9d93a
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[3522]:0x220062
+    at http://localhost:5173/pkg/alacritty_web_bg.wasm:wasm-function[1391]:0x1c751b
+    at AlacrittyTerminal.feed (http://localhost:5173/pkg/alacritty_web.js:483:14)
+    at runReplay (http://localhost:5173/src/routes/+page.svelte:82:19)

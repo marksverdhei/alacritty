@@ -1,0 +1,82 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Alacritty WASM vs xterm.js" [level=1] [ref=e5]
+    - paragraph [ref=e6]: Same PTY, tee'd into both terminals. Type in either pane — both render the shell's response.
+    - generic [ref=e7]:
+      - generic [ref=e8]: open
+      - generic [ref=e9]: "in: 1677B"
+      - generic [ref=e10]: "out: 7B"
+      - generic [ref=e11]: "xterm write: 0.00ms"
+      - generic [ref=e12]: "alacritty feed: 0.00ms"
+  - generic [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - text: xterm.js
+        - generic [ref=e17]: DOM + Canvas renderer
+      - generic [ref=e22]:
+        - textbox "Terminal input" [ref=e23]
+        - generic:
+          - generic:
+            - generic: Desktop playwright-mcp-server.log
+          - generic:
+            - generic: Documents posting
+          - generic:
+            - generic: dotfiles pot_chunks
+          - generic:
+            - generic: Downloads POTD.md
+          - generic:
+            - generic: droidrun-mcp pot.mp3
+          - generic:
+            - generic: eval-clis pot_tracks
+          - generic:
+            - generic: fay-camera promo
+          - generic:
+            - generic: fay-crashes prusapw
+          - generic:
+            - generic: fl-screenshot.png Public
+          - generic:
+            - generic: Games repos
+          - generic:
+            - generic: GEMINI.md Repos
+          - generic:
+            - generic: hai scratch
+          - generic:
+            - generic: hei snail-workspace
+          - generic:
+            - generic: ht some
+          - generic:
+            - generic: identity-matrices split_pot.py
+          - generic:
+            - generic: jonas studio
+          - generic:
+            - generic: lego-dungeon Templates
+          - generic:
+            - generic: marksverdhei titan
+          - generic:
+            - generic: matrix.mp3 Videos
+          - generic:
+            - generic: media vms
+          - generic:
+            - generic: Media VMs
+          - generic:
+            - generic: mgrm.mp3 Wallpapers
+          - generic:
+            - generic: models Work
+          - generic:
+            - generic: centurion
+            - generic: ~
+            - generic:  .venv
+          - generic:
+            - generic: ❯
+            - generic: pwd
+          - generic:
+            - generic: /home/me
+          - generic:
+            - generic: centurion
+            - generic: ~
+            - generic:  .venv
+          - generic:
+            - generic: ❯
+    - generic [ref=e25]:
+      - text: Alacritty (WASM)
+      - generic [ref=e27]: Rust → wasm32 → Canvas2D

@@ -1,0 +1,4 @@
+[      46ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/pkg/alacritty_web.js:0
+[      46ms] [ERROR] Terminal init failed: TypeError: Failed to fetch dynamically imported module: http://localhost:5173/pkg/alacritty_web.js @ http://localhost:5173/src/lib/components/AlacrittyTerminal.svelte:137
+[      46ms] [ERROR] Terminal init failed: TypeError: Failed to fetch dynamically imported module: http://localhost:5173/pkg/alacritty_web.js @ http://localhost:5173/src/lib/components/AlacrittyTerminal.svelte:137
+[      47ms] [ERROR] Terminal init failed: TypeError: Failed to fetch dynamically imported module: http://localhost:5173/pkg/alacritty_web.js @ http://localhost:5173/src/lib/components/AlacrittyTerminal.svelte:137

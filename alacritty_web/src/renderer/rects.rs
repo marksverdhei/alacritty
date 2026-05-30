@@ -210,6 +210,14 @@ impl RectRenderer {
         }));
     }
 
+    /// Update the projection matrix for the current viewport size.
+    pub fn update_projection(&mut self, queue: &wgpu::Queue, width: f32, height: f32) {
+        let uniforms = RectUniforms {
+            projection: super::text::orthographic_projection(width, height),
+        };
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+    }
+
     /// Draw rectangles within a render pass.
     pub fn draw<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
         if self.instance_count == 0 {

@@ -1,0 +1,6 @@
+[     187ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     188ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     189ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     189ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     734ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1590
+[  300241ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1590

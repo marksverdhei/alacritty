@@ -1,0 +1,4 @@
+[      41ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     100ms] [ERROR] Failed to load resource: the server responded with a status of 500 (Internal Server Error) @ http://localhost:5191/src/routes/compare/+page.svelte:0
+[     101ms] [WARNING] The next HMR update will cause the page to reload @ http://localhost:5191/node_modules/@sveltejs/kit/src/runtime/client/client.js?v=2ec57346:3298
+[     101ms] [ERROR] TypeError: Failed to fetch dynamically imported module: http://localhost:5191/.svelte-kit/generated/client/nodes/3.js @ http://localhost:5191/@fs/home/me/marksverdhei/alacritty/demo/.svelte-kit/generated/client/app.js:17

@@ -25,6 +25,15 @@ lto = "thin"
 debug = 1
 incremental = false
 
+# Per-package overrides for the wasm crate: smaller code, no debug info.
+# `strip` is left to wasm-opt — overriding it here breaks the wasm-bindgen
+# name section and wasm-opt then rejects the binary. The native alacritty
+# binary still gets the default thin-LTO + opt-level=3 from above.
+[profile.release.package.alacritty_web]
+opt-level = "z"
+codegen-units = 1
+debug = false
+
 [workspace.dependencies]
 toml = "0.9.11"
 toml_edit = "0.24.0"

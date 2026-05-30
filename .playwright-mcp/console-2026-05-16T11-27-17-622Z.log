@@ -1,0 +1,5 @@
+[      62ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5173/pkg/alacritty_web.js:1438
+[      63ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=549x548 @ http://localhost:5173/pkg/alacritty_web.js:1438
+[      63ms] [INFO] Initial grid: 68x32 @ http://localhost:5173/pkg/alacritty_web.js:1438
+[      64ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5173/pkg/alacritty_web.js:1438
+[      84ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:5173/src/routes/compare/+page.svelte:675

@@ -4,11 +4,17 @@ mod renderer;
 pub mod terminal;
 mod websocket;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "wgpu")]
+use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
+#[cfg(feature = "wgpu")]
+use web_sys::HtmlElement;
+
+use renderer::TerminalRenderer;
 
 /// Font configuration for the terminal renderer, matching `FontConfig` in `canvas2d.rs`.
 ///
@@ -24,12 +30,25 @@ fn init_wasm() {
 
 /// Shared state for the terminal + renderer.
 struct AppState {
-    renderer: renderer::canvas2d::Canvas2dRenderer,
+    renderer: Box<dyn TerminalRenderer>,
     terminal: terminal::WebTerminal,
     dirty: bool,
     ws: Option<websocket::WsConnection>,
-    /// Data fed directly (replay/WebContainer), not via WebSocket.
-    local_data: Vec<Vec<u8>>,
+    /// Data fed directly (replay/WebContainer), not via WebSocket. Kept as a
+    /// single flat buffer so 256 `feed()` calls in a hot loop don't allocate
+    /// 256 `Vec<u8>` instances or take 256 mutex locks on the term.
+    local_data: Vec<u8>,
+    /// Whether the hosting canvas currently has keyboard focus. Drives the
+    /// solid-vs-hollow cursor shape like native Alacritty.
+    focused: bool,
+    /// Timing of the most recent RAF tick that actually did work
+    /// (`Performance.now()` deltas, milliseconds).
+    last_parse_ms: f64,
+    last_render_ms: f64,
+    /// Monotonic counter incremented after every successful render. The
+    /// stress benchmark polls this to detect when a feed() has actually
+    /// landed on screen — much more accurate than waiting N RAFs.
+    frame_seq: u64,
 }
 
 /// The main Alacritty terminal component for the browser.
@@ -38,6 +57,10 @@ pub struct AlacrittyTerminal {
     state: Rc<RefCell<AppState>>,
     #[allow(dead_code)]
     canvas: HtmlCanvasElement,
+    /// Cached cell metrics so JS getters (called from ResizeObserver during a
+    /// render borrow) never need to touch the RefCell.
+    cell_w_cache: Rc<Cell<f32>>,
+    cell_h_cache: Rc<Cell<f32>>,
 }
 
 #[wasm_bindgen]
@@ -48,7 +71,8 @@ impl AlacrittyTerminal {
         init_wasm();
         log::info!("Initializing AlacrittyTerminal");
 
-        let renderer = renderer::canvas2d::Canvas2dRenderer::new(&canvas)?;
+        let renderer: Box<dyn TerminalRenderer> =
+            Box::new(renderer::canvas2d::Canvas2dRenderer::new(&canvas)?);
         let cell_w = renderer.cell_width();
         let cell_h = renderer.cell_height();
 
@@ -66,15 +90,45 @@ impl AlacrittyTerminal {
             terminal,
             dirty: true,
             ws: None,
-            local_data: Vec::new(),
+            local_data: Vec::with_capacity(64 * 1024),
+            focused: true,
+            last_parse_ms: 0.0,
+            last_render_ms: 0.0,
+            frame_seq: 0,
         }));
 
+        let cell_w_cache = Rc::new(Cell::new(cell_w));
+        let cell_h_cache = Rc::new(Cell::new(cell_h));
+
         let term = AlacrittyTerminal {
-            state,
-            canvas,
+            state: state.clone(),
+            canvas: canvas.clone(),
+            cell_w_cache,
+            cell_h_cache,
         };
 
         term.start_render_loop();
+
+        // Try to upgrade to wgpu asynchronously.
+        // Only attempt if explicitly enabled via data attribute on canvas AND
+        // the binary was compiled with `--features wgpu`.
+        #[cfg(feature = "wgpu")]
+        {
+            let try_wgpu = canvas
+                .get_attribute("data-enable-wgpu")
+                .map(|v| v == "true")
+                .unwrap_or(false);
+            if try_wgpu {
+                Self::try_upgrade_to_wgpu(state, canvas);
+            } else {
+                log::info!("wgpu upgrade not requested, using Canvas 2D");
+            }
+        }
+        #[cfg(not(feature = "wgpu"))]
+        {
+            let _ = state;
+            let _ = canvas;
+        }
 
         Ok(term)
     }
@@ -91,47 +145,81 @@ impl AlacrittyTerminal {
         self.state.borrow_mut().ws = None;
     }
 
+    /// Current state of the underlying WebSocket, mapped from `WebSocket.readyState`.
+    /// Returns 0 = connecting, 1 = open, 2 = closing, 3 = closed, -1 = no socket.
+    pub fn ws_ready_state(&self) -> i32 {
+        let Ok(app) = self.state.try_borrow() else {
+            return -1;
+        };
+        app.ws.as_ref().map_or(-1, |ws| ws.ready_state() as i32)
+    }
+
     /// Feed data directly into the terminal (for replay/local input, no PTY).
+    /// Appended to a flat buffer so a burst of small calls turns into a single
+    /// `parser.advance()` invocation in the next RAF.
     pub fn feed(&self, data: &[u8]) {
         if let Ok(mut app) = self.state.try_borrow_mut() {
-            app.local_data.push(data.to_vec());
+            app.local_data.extend_from_slice(data);
             app.dirty = true;
         }
     }
 
-    /// Write data to the PTY (send input).
+    /// Write data to the PTY (send input). Also snaps the viewport back to
+    /// the bottom and clears any active selection -- matches native Alacritty.
     pub fn write(&self, data: &[u8]) {
         if let Ok(mut app) = self.state.try_borrow_mut() {
             if let Some(ws) = &mut app.ws {
                 ws.send_pty_data(data);
             }
+            app.terminal.scroll_to_bottom();
+            app.terminal.selection_clear();
+            app.dirty = true;
         }
     }
 
     /// Send a resize message to the server.
-    pub fn resize(&mut self, cols: u16, rows: u16) {
-        let mut app = self.state.borrow_mut();
+    pub fn resize(&self, cols: u16, rows: u16) {
+        // `try_borrow_mut` rather than `borrow_mut`: ResizeObserver can fire
+        // while the render loop is mid-frame; ignoring this tick is fine
+        // because the next frame will observe the new size.
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
         app.terminal.resize(cols, rows);
+        app.renderer.resize_backing_store();
         app.dirty = true;
         if let Some(ws) = &mut app.ws {
             ws.send_resize(cols, rows, 0, 0);
         }
     }
 
-    /// Get cell width in pixels.
-    pub fn cell_width(&self) -> f32 {
-        self.state.borrow().renderer.cell_width()
+    /// Resize the canvas backing store to match its CSS size. Call this
+    /// whenever the canvas element's size changes (e.g. from ResizeObserver).
+    pub fn sync_canvas_size(&self) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.renderer.resize_backing_store();
+        app.dirty = true;
     }
 
-    /// Get cell height in pixels.
+    /// Get cell width in pixels. Cached so this is safe to call re-entrantly
+    /// (e.g. from a ResizeObserver while a render borrow is active).
+    pub fn cell_width(&self) -> f32 {
+        self.cell_w_cache.get()
+    }
+
+    /// Get cell height in pixels. Cached -- see `cell_width` for why.
     pub fn cell_height(&self) -> f32 {
-        self.state.borrow().renderer.cell_height()
+        self.cell_h_cache.get()
     }
 
     /// Set the font size in pixels and trigger a re-render.
     pub fn set_font_size(&self, size_px: f32) {
         let mut app = self.state.borrow_mut();
         app.renderer.set_font_size(size_px);
+        self.cell_w_cache.set(app.renderer.cell_width());
+        self.cell_h_cache.set(app.renderer.cell_height());
         app.dirty = true;
     }
 
@@ -139,6 +227,8 @@ impl AlacrittyTerminal {
     pub fn set_font_family(&self, family: &str) {
         let mut app = self.state.borrow_mut();
         app.renderer.set_font_family(family);
+        self.cell_w_cache.set(app.renderer.cell_width());
+        self.cell_h_cache.set(app.renderer.cell_height());
         app.dirty = true;
     }
 
@@ -146,6 +236,8 @@ impl AlacrittyTerminal {
     pub fn set_line_height_multiplier(&self, multiplier: f32) {
         let mut app = self.state.borrow_mut();
         app.renderer.set_line_height_multiplier(multiplier);
+        self.cell_w_cache.set(app.renderer.cell_width());
+        self.cell_h_cache.set(app.renderer.cell_height());
         app.dirty = true;
     }
 
@@ -159,6 +251,316 @@ impl AlacrittyTerminal {
         self.state.borrow().terminal.rows()
     }
 
+    /// Get the active renderer backend name ("wgpu" or "canvas2d").
+    pub fn renderer_backend(&self) -> String {
+        self.state.borrow().renderer.backend_name().to_string()
+    }
+
+    /// Wall time spent draining/parsing PTY bytes during the most recent
+    /// RAF that did work, in milliseconds. Zero when no data was processed.
+    pub fn last_parse_ms(&self) -> f64 {
+        self.state.try_borrow().map(|a| a.last_parse_ms).unwrap_or(0.0)
+    }
+
+    /// Wall time spent in the renderer (paint into canvas) during the most
+    /// recent RAF that did work, in milliseconds.
+    pub fn last_render_ms(&self) -> f64 {
+        self.state.try_borrow().map(|a| a.last_render_ms).unwrap_or(0.0)
+    }
+
+    /// Monotonic counter — incremented once after every successful render.
+    /// JS can poll this to know when a `feed()` has actually made it to
+    /// screen, instead of guessing how many RAFs to wait.
+    pub fn frame_seq(&self) -> u32 {
+        // u32 is plenty (overflows after ~2 years at 60Hz); easier to bridge
+        // to JS than u64, which serde-wasm-bindgen turns into BigInt.
+        self.state.try_borrow().map(|a| a.frame_seq as u32).unwrap_or(0)
+    }
+
+    /// Number of fed-but-not-yet-parsed bytes. JS polls this to know when a
+    /// feed() has been consumed by the next RAF.
+    pub fn pending_bytes(&self) -> u32 {
+        self.state
+            .try_borrow()
+            .map(|a| a.local_data.len() as u32)
+            .unwrap_or(0)
+    }
+
+    /// Back-compat alias for the older bench name. Returns 0 if no pending,
+    /// nonzero if pending — same semantics the benchmark cares about.
+    pub fn pending_chunks(&self) -> u32 {
+        self.pending_bytes()
+    }
+
+    /// Scroll the display viewport by `delta` lines. Positive scrolls into
+    /// scrollback (towards older output), negative scrolls towards the bottom.
+    pub fn scroll(&self, delta: i32) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.scroll_display(delta);
+        app.dirty = true;
+    }
+
+    /// Jump the display viewport to the bottom (most recent output).
+    pub fn scroll_to_bottom(&self) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.scroll_to_bottom();
+        app.dirty = true;
+    }
+
+    /// Apply a palette override taken from a user's alacritty config. Each
+    /// entry is a 7-char "#RRGGBB" string. Unknown keys are ignored. Any
+    /// missing key falls back to the built-in default. Accepts the keys:
+    ///   background, foreground, cursor,
+    ///   black, red, green, yellow, blue, magenta, cyan, white,
+    ///   bright_black, bright_red, bright_green, bright_yellow,
+    ///   bright_blue, bright_magenta, bright_cyan, bright_white.
+    pub fn set_palette(&self, palette: JsValue) -> Result<(), JsError> {
+        // Use Handler::set_color which is the public path for poking colors
+        // into a Term. The inherent `Term::colors` field is private.
+        use alacritty_terminal::vte::ansi::{Handler, NamedColor, Rgb};
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return Err(JsError::new("terminal busy"));
+        };
+        let parse = |s: &str| -> Option<Rgb> {
+            let s = s.trim().trim_start_matches('#');
+            if s.len() != 6 { return None; }
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            Some(Rgb { r, g, b })
+        };
+        let entries: &[(&str, NamedColor)] = &[
+            ("background", NamedColor::Background),
+            ("foreground", NamedColor::Foreground),
+            ("cursor", NamedColor::Cursor),
+            ("black", NamedColor::Black),
+            ("red", NamedColor::Red),
+            ("green", NamedColor::Green),
+            ("yellow", NamedColor::Yellow),
+            ("blue", NamedColor::Blue),
+            ("magenta", NamedColor::Magenta),
+            ("cyan", NamedColor::Cyan),
+            ("white", NamedColor::White),
+            ("bright_black", NamedColor::BrightBlack),
+            ("bright_red", NamedColor::BrightRed),
+            ("bright_green", NamedColor::BrightGreen),
+            ("bright_yellow", NamedColor::BrightYellow),
+            ("bright_blue", NamedColor::BrightBlue),
+            ("bright_magenta", NamedColor::BrightMagenta),
+            ("bright_cyan", NamedColor::BrightCyan),
+            ("bright_white", NamedColor::BrightWhite),
+        ];
+        let term = app.terminal.term().clone();
+        let mut term_guard = term.lock();
+        for (key, named) in entries {
+            let v = js_sys::Reflect::get(&palette, &JsValue::from_str(key));
+            if let Ok(v) = v {
+                if let Some(s) = v.as_string() {
+                    if let Some(rgb) = parse(&s) {
+                        Handler::set_color(&mut *term_guard, *named as usize, rgb);
+                    }
+                }
+            }
+        }
+        drop(term_guard);
+        app.dirty = true;
+        Ok(())
+    }
+
+    /// Set the focused state. Drives the solid-vs-hollow cursor shape.
+    pub fn set_focused(&self, focused: bool) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        if app.focused != focused {
+            app.focused = focused;
+            app.dirty = true;
+        }
+    }
+
+    /// Start a selection at the given viewport cell. `row` counts from the top
+    /// of the visible area (0..rows). `side_left` selects whether the click
+    /// landed on the left or right half of the cell.
+    pub fn selection_start(&self, row: i32, column: u32, side_left: bool) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.selection_start(row, column as usize, side_left);
+        app.dirty = true;
+    }
+
+    /// Extend the active selection to the given viewport cell.
+    pub fn selection_update(&self, row: i32, column: u32, side_left: bool) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.selection_update(row, column as usize, side_left);
+        app.dirty = true;
+    }
+
+    /// Clear any active selection.
+    pub fn selection_clear(&self) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.selection_clear();
+        app.dirty = true;
+    }
+
+    /// Return the current selection as a string, or undefined if nothing is
+    /// selected. Useful for the JS side to implement copy-to-clipboard.
+    pub fn selection_text(&self) -> Option<String> {
+        let app = self.state.try_borrow().ok()?;
+        app.terminal.selection_to_string()
+    }
+
+    /// Select the word at the given viewport cell (semantic boundaries).
+    pub fn selection_word(&self, row: i32, column: u32) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.selection_word(row, column as usize);
+        app.dirty = true;
+    }
+
+    /// Select the entire line at the given viewport cell.
+    pub fn selection_line(&self, row: i32, column: u32) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.selection_line(row, column as usize);
+        app.dirty = true;
+    }
+
+    /// Encode a mouse event into a PTY byte sequence following the active
+    /// terminal mouse-reporting mode (DECSET 1000/1002/1003/1006). Returns
+    /// `None` when no mouse reporting is enabled OR the event should not be
+    /// reported (e.g. a motion event when only click reporting is on).
+    /// The JS side calls this from mousedown/mouseup/mousemove/wheel; if it
+    /// gets bytes back it writes them to the PTY and skips its own default
+    /// behaviour (start selection, scroll).
+    ///
+    /// Parameters:
+    /// - `button`: canonical xterm button code. 0=left, 1=middle, 2=right,
+    ///   3=released (used by legacy non-SGR encoding), 64=wheel up, 65=wheel
+    ///   down. For "motion without button held" pass 3.
+    /// - `action`: 0=press, 1=release, 2=motion.
+    /// - `col`, `row`: zero-based grid coordinates inside the viewport.
+    /// - `mods`: bit0=shift, bit1=alt/meta, bit2=ctrl.
+    pub fn report_mouse(
+        &self,
+        button: u8,
+        action: u8,
+        col: u16,
+        row: u16,
+        mods: u8,
+    ) -> Option<Vec<u8>> {
+        let Ok(mut app) = self.state.try_borrow_mut() else { return None; };
+        let bits = app.terminal.mouse_mode_bits();
+        let click = bits & 1 != 0;
+        let drag  = bits & 2 != 0;
+        let motion = bits & 4 != 0;
+        let sgr = bits & 8 != 0;
+        if !(click || drag || motion) {
+            return None;
+        }
+        // Filter motion events by mode. Native alacritty does the same gating:
+        //   - drag mode: only motion *while a button is pressed*
+        //   - motion mode: all motion
+        //   - click-only: no motion at all
+        if action == 2 {
+            if !(motion || drag) { return None; }
+            // The JS side encodes "no button held" as button = 3; drag mode
+            // should ignore those.
+            if drag && !motion && button == 3 { return None; }
+        }
+
+        // Build the modifier-adjusted button code. SGR encoding overlays
+        // mods into the same byte; the legacy "M Cb Cx Cy" form puts the
+        // shift/meta/ctrl bits at +4/+8/+16 too. Motion events ORd with 32
+        // — that's how xterm signals "this is a drag, not a fresh click".
+        let mod_shift = if mods & 1 != 0 { 4 } else { 0 };
+        let mod_alt   = if mods & 2 != 0 { 8 } else { 0 };
+        let mod_ctrl  = if mods & 4 != 0 { 16 } else { 0 };
+        let motion_bit = if action == 2 { 32 } else { 0 };
+        let base = button.saturating_add(mod_shift + mod_alt + mod_ctrl + motion_bit);
+
+        // 1-based coords for the wire format.
+        let col1 = col + 1;
+        let row1 = row + 1;
+
+        // Send write through the same path keystrokes use so it goes over the
+        // WebSocket (or queues if not yet connected).
+        let mut bytes: Vec<u8> = Vec::with_capacity(16);
+        if sgr {
+            let c = if action == 1 { 'm' } else { 'M' };
+            // `\x1b[<{base};{col};{row}{c}`
+            bytes.extend_from_slice(b"\x1b[<");
+            bytes.extend_from_slice(base.to_string().as_bytes());
+            bytes.push(b';');
+            bytes.extend_from_slice(col1.to_string().as_bytes());
+            bytes.push(b';');
+            bytes.extend_from_slice(row1.to_string().as_bytes());
+            bytes.push(c as u8);
+        } else {
+            // Legacy X10/Normal: max coords are 223 (255 - 32). Bail out
+            // silently if we're outside the encodable range.
+            if col1 > 223 || row1 > 223 { return None; }
+            let btn = if action == 1 { 3 + mod_shift + mod_alt + mod_ctrl + motion_bit } else { base };
+            bytes.extend_from_slice(b"\x1b[M");
+            bytes.push(32u8.saturating_add(btn));
+            bytes.push(32u8 + col1 as u8);
+            bytes.push(32u8 + row1 as u8);
+        }
+
+        // Side-effect: ship to PTY immediately if connected. The Option<Vec<u8>>
+        // return is also given back to JS so it can write via its own channel
+        // (e.g. the `/compare` page owns its own WebSocket).
+        if let Some(ws) = &mut app.ws {
+            ws.send_pty_data(&bytes);
+        }
+        Some(bytes)
+    }
+
+    /// Whether the terminal currently wants mouse events forwarded to the PTY.
+    /// JS reads this in mousedown to decide between starting a selection and
+    /// calling `report_mouse`.
+    pub fn mouse_reporting_active(&self) -> bool {
+        self.state
+            .try_borrow()
+            .map(|a| a.terminal.mouse_mode_bits() != 0)
+            .unwrap_or(false)
+    }
+
+    /// Paste text into the PTY. Wraps the text with bracketed-paste markers
+    /// when the terminal has requested that mode, so shells like bash can
+    /// distinguish pasted bytes from typed bytes.
+    pub fn paste(&self, text: &str) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        let bracketed = app.terminal.bracketed_paste();
+        let payload: Vec<u8> = if bracketed {
+            let mut buf = Vec::with_capacity(text.len() + 12);
+            buf.extend_from_slice(b"\x1b[200~");
+            buf.extend_from_slice(text.as_bytes());
+            buf.extend_from_slice(b"\x1b[201~");
+            buf
+        } else {
+            text.as_bytes().to_vec()
+        };
+        if let Some(ws) = &mut app.ws {
+            ws.send_pty_data(&payload);
+        }
+        app.terminal.scroll_to_bottom();
+        app.terminal.selection_clear();
+        app.dirty = true;
+    }
+
     /// Clean up resources.
     pub fn dispose(self) {
         drop(self);
@@ -166,6 +568,126 @@ impl AlacrittyTerminal {
 }
 
 impl AlacrittyTerminal {
+    /// Check if the browser has a working WebGPU adapter.
+    ///
+    /// We intentionally do NOT fall back to WebGL2 via wgpu's GL backend
+    /// because it causes WASM heap corruption on adapter creation failure.
+    /// Returns a future that resolves to true only if navigator.gpu.requestAdapter()
+    /// actually returns an adapter.
+    #[cfg(feature = "wgpu")]
+    async fn has_webgpu_adapter() -> bool {
+        let Some(window) = web_sys::window() else {
+            return false;
+        };
+        let navigator = window.navigator();
+        let gpu = js_sys::Reflect::get(&navigator, &JsValue::from_str("gpu"));
+        let Ok(gpu) = gpu else {
+            return false;
+        };
+        if gpu.is_undefined() || gpu.is_null() {
+            return false;
+        }
+        // Call navigator.gpu.requestAdapter() to check for a real adapter.
+        let request_adapter =
+            js_sys::Reflect::get(&gpu, &JsValue::from_str("requestAdapter"));
+        let Ok(request_adapter) = request_adapter else {
+            return false;
+        };
+        if !request_adapter.is_function() {
+            return false;
+        }
+        let func: js_sys::Function = request_adapter.unchecked_into();
+        let promise = func.call0(&gpu);
+        let Ok(promise) = promise else {
+            return false;
+        };
+        let promise: js_sys::Promise = promise.unchecked_into();
+        let result = wasm_bindgen_futures::JsFuture::from(promise).await;
+        match result {
+            Ok(adapter) => !adapter.is_null() && !adapter.is_undefined(),
+            Err(_) => false,
+        }
+    }
+
+    /// Attempt to upgrade from Canvas 2D to wgpu renderer asynchronously.
+    ///
+    /// Creates a separate canvas for wgpu (since a canvas can only have one
+    /// context type). On success, the wgpu canvas replaces the original and
+    /// the Canvas 2D canvas is hidden. On failure, stays on Canvas 2D.
+    #[cfg(feature = "wgpu")]
+    fn try_upgrade_to_wgpu(state: Rc<RefCell<AppState>>, canvas: HtmlCanvasElement) {
+        wasm_bindgen_futures::spawn_local(async move {
+            // Check for a real WebGPU adapter before attempting wgpu init.
+            if !Self::has_webgpu_adapter().await {
+                log::info!("No WebGPU adapter available, staying on Canvas 2D");
+                return;
+            }
+            // Create a sibling canvas for wgpu (can't reuse the 2d context canvas).
+            let document = match web_sys::window().and_then(|w| w.document()) {
+                Some(doc) => doc,
+                None => return,
+            };
+
+            let wgpu_canvas: HtmlCanvasElement = match document
+                .create_element("canvas")
+                .ok()
+                .and_then(|el| el.dyn_into::<HtmlCanvasElement>().ok())
+            {
+                Some(c) => c,
+                None => {
+                    log::warn!("Failed to create wgpu canvas element");
+                    return;
+                }
+            };
+
+            // Match the original canvas size and position.
+            let wgpu_el: &HtmlElement = wgpu_canvas.unchecked_ref();
+            let style = wgpu_el.style();
+            let _ = style.set_property("position", "absolute");
+            let _ = style.set_property("top", "0");
+            let _ = style.set_property("left", "0");
+            let _ = style.set_property("width", "100%");
+            let _ = style.set_property("height", "100%");
+
+            // Insert the wgpu canvas next to the original (hidden initially).
+            let _ = style.set_property("display", "none");
+            if let Some(parent) = canvas.parent_node() {
+                if let Err(e) = parent.insert_before(&wgpu_canvas, Some(&canvas)) {
+                    log::warn!("Failed to insert wgpu canvas: {e:?}");
+                    return;
+                }
+            } else {
+                log::warn!("Canvas has no parent node, cannot insert wgpu canvas");
+                return;
+            }
+
+            // Try to initialize wgpu.
+            match renderer::WgpuRenderer::new(&wgpu_canvas).await {
+                Ok(wgpu_renderer) => {
+                    if let Ok(mut app) = state.try_borrow_mut() {
+                        app.renderer = Box::new(wgpu_renderer);
+                        app.dirty = true;
+
+                        // Show wgpu canvas, hide canvas2d canvas.
+                        let wgpu_el: &HtmlElement = wgpu_canvas.unchecked_ref();
+                        let _ = wgpu_el.style().set_property("display", "block");
+                        let canvas_el: &HtmlElement = canvas.unchecked_ref();
+                        let _ = canvas_el.style().set_property("display", "none");
+
+                        log::info!("Upgraded to wgpu renderer");
+                    }
+                }
+                Err(e) => {
+                    // Clean up the unused wgpu canvas.
+                    if let Some(parent) = wgpu_canvas.parent_node() {
+                        let _ = parent.remove_child(&wgpu_canvas);
+                    }
+                    log::info!("wgpu not available, staying on Canvas 2D: {e:?}");
+                }
+            }
+        });
+    }
+
     /// Start the requestAnimationFrame render loop.
     fn start_render_loop(&self) {
         let state = self.state.clone();
@@ -173,6 +695,11 @@ impl AlacrittyTerminal {
         let callback_clone = callback.clone();
 
         *callback.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+            // `Performance::now()` for sub-millisecond timing instrumentation.
+            // Cheap (just a JS call) and only called when there's work to
+            // measure, so it's fine to leave on in production.
+            let perf = web_sys::window().and_then(|w| w.performance());
+
             // All data processing and rendering in a single borrow.
             if let Ok(mut app) = state.try_borrow_mut() {
                 // Flush pending outgoing messages once the connection is open.
@@ -180,33 +707,61 @@ impl AlacrittyTerminal {
                     ws.flush_pending();
                 }
 
-                // Drain WebSocket data (polled from JS-side queue, no WASM callbacks).
+                let mut parse_ms = 0.0f64;
+                let parse_start = perf.as_ref().map(|p| p.now());
+
+                // Pull WS chunks into the same flat buffer as the locally-fed
+                // data so we lock the term mutex and call into the VTE parser
+                // exactly once per frame, no matter how many small chunks
+                // arrived. The order (WS before local) matches the previous
+                // behaviour.
                 if let Some(ws) = &app.ws {
                     let ws_chunks = ws.drain_incoming();
                     if !ws_chunks.is_empty() {
-                        for chunk in ws_chunks {
-                            app.terminal.process_bytes(&chunk);
+                        // Reserve all at once to avoid repeated regrows.
+                        let total: usize = ws_chunks.iter().map(|c| c.len()).sum();
+                        app.local_data.reserve(total);
+                        for chunk in &ws_chunks {
+                            app.local_data.extend_from_slice(chunk);
                         }
-                        app.dirty = true;
                     }
                 }
 
-                // Drain locally-fed data.
                 if !app.local_data.is_empty() {
-                    let local: Vec<Vec<u8>> = app.local_data.drain(..).collect();
-                    for chunk in local {
-                        app.terminal.process_bytes(&chunk);
-                    }
+                    // Move the buffer out of `app` so the immutable borrow it
+                    // returns from process_bytes (no, process_bytes takes &mut
+                    // self) doesn't conflict. take() leaves an empty Vec
+                    // behind; we put the capacity back below so subsequent
+                    // frames don't re-allocate.
+                    let buf = std::mem::take(&mut app.local_data);
+                    app.terminal.process_bytes(&buf);
+                    // Re-use the allocation across frames.
+                    app.local_data = buf;
+                    app.local_data.clear();
                     app.dirty = true;
+                }
+
+                if let (Some(p), Some(start)) = (perf.as_ref(), parse_start) {
+                    parse_ms = p.now() - start;
                 }
 
                 // Render if dirty.
                 if app.dirty {
+                    let focused = app.focused;
+                    app.renderer.set_focused(focused);
                     let term = app.terminal.term().clone();
                     let term_guard = term.lock();
+                    let render_start = perf.as_ref().map(|p| p.now());
                     app.renderer.render(&term_guard);
                     drop(term_guard);
+                    let render_ms = match (perf.as_ref(), render_start) {
+                        (Some(p), Some(start)) => p.now() - start,
+                        _ => 0.0,
+                    };
                     app.dirty = false;
+                    app.last_parse_ms = parse_ms;
+                    app.last_render_ms = render_ms;
+                    app.frame_seq = app.frame_seq.wrapping_add(1);
                 }
             }
 

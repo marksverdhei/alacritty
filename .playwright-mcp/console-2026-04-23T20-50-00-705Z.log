@@ -1,0 +1,69 @@
+[      65ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     194ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     815ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=1148x574 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     815ms] [INFO] Initial grid: 143x33 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     816ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     816ms] [LOG] [DBG] created AlacrittyTerminal for: WebContainer Terminal @ http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:99
+[     816ms] [LOG] [DBG] initWebContainer for: WebContainer Terminal @ http://localhost:5191/src/routes/+page.svelte?t=1776976894711:92
+[     864ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     866ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=1148x574 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     866ms] [INFO] Initial grid: 143x33 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     866ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     866ms] [LOG] [DBG] created AlacrittyTerminal for: Demo Terminal @ http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:99
+[     866ms] [LOG] [DBG] startReplay called for: Demo Terminal @ http://localhost:5191/src/routes/+page.svelte?t=1776976894711:66
+[     866ms] [LOG] [DBG] runReplay target: Demo Terminal @ http://localhost:5191/src/routes/+page.svelte?t=1776976894711:75
+[     867ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     869ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=1148x574 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     869ms] [INFO] Initial grid: 143x33 @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     869ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1269
+[     869ms] [LOG] [DBG] created AlacrittyTerminal for: WebSocket Terminal @ http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:99
+[     885ms] [LOG] WebSocket connection opened @ :2
+[    1485ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1269
+[    2519ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://vdi9g7cladzvvcrar1t4nj9na6x6u0-ruub.w-corp-staticblitz.com/blitz.4c73681d.js:18
+[    4307ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.4c73681d.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0
+[   30204ms] RuntimeError: table index is out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2689]:0x213157
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[812]:0x12aa68
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3045]:0x219b0a
+    at __wbg_adapter_20 (http://localhost:5191/pkg/alacritty_web.js:316:10)
+    at real (http://localhost:5191/pkg/alacritty_web.js:253:20)
+[   30206ms] RuntimeError: table index is out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2689]:0x213157
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[812]:0x12aa68
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3045]:0x219b0a
+    at __wbg_adapter_20 (http://localhost:5191/pkg/alacritty_web.js:316:10)
+    at real (http://localhost:5191/pkg/alacritty_web.js:253:20)
+[   30206ms] RuntimeError: table index is out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2689]:0x213157
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[812]:0x12aa68
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3045]:0x219b0a
+    at __wbg_adapter_20 (http://localhost:5191/pkg/alacritty_web.js:316:10)
+    at real (http://localhost:5191/pkg/alacritty_web.js:253:20)
+[   45945ms] [LOG] [DBG] runReplay target: Demo Terminal @ http://localhost:5191/src/routes/+page.svelte?t=1776976894711:75
+[   46446ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87548
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3550]:0x21e5ba
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2711]:0x2137d0
+    at passArray8ToWasm0 (http://localhost:5191/pkg/alacritty_web.js:97:17)
+    at AlacrittyTerminal.feed (http://localhost:5191/pkg/alacritty_web.js:482:22)
+    at runReplay (http://localhost:5191/src/routes/+page.svelte?t=1776976894711:85:11)
+[   50282ms] RuntimeError: memory access out of bounds
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[596]:0x87548
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3550]:0x21e5ba
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[1387]:0x1c2d72
+    at AlacrittyTerminal.resize (http://localhost:5191/pkg/alacritty_web.js:509:14)
+    at ResizeObserver.<anonymous> (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:119:16)
+[   50283ms] Error: recursive use of an object detected which would lead to unsafe aliasing in rust
+    at imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 (http://localhost:5191/pkg/alacritty_web.js:2426:15)
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3642]:0x2212b7
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3641]:0x2212ac
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2215]:0x20626e
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:400:26)
+    at ResizeObserver.<anonymous> (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:108:28)
+[   50283ms] Error: recursive use of an object detected which would lead to unsafe aliasing in rust
+    at imports.wbg.__wbg_wbindgenthrow_451ec1a8469d7eb6 (http://localhost:5191/pkg/alacritty_web.js:2426:15)
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3642]:0x2212b7
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[3641]:0x2212ac
+    at http://localhost:5191/pkg/alacritty_web_bg.wasm:wasm-function[2215]:0x20626e
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:400:26)
+    at ResizeObserver.<anonymous> (http://localhost:5191/src/lib/components/AlacrittyTerminal.svelte?t=1776976885365:108:28)

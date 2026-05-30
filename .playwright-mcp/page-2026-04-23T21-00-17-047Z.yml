@@ -1,0 +1,36 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Alacritty Web" [level=1] [ref=e5]
+    - paragraph [ref=e6]: GPU-accelerated terminal in your browser
+    - paragraph [ref=e7]: The fastest terminal emulator, compiled to WebAssembly. Full VT100/xterm emulation, ANSI colors, and Canvas2D rendering — all running client-side.
+    - generic [ref=e8]:
+      - generic [ref=e9]: Rust + WASM
+      - generic [ref=e10]: Canvas2D
+      - generic [ref=e11]: WebSocket PTY
+      - generic [ref=e12]: MIT/Apache-2.0
+  - generic [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - heading "Demo Terminal" [level=2] [ref=e16]
+        - paragraph [ref=e17]: Pre-recorded session showcasing colors, formatting, and terminal capabilities. No server connection needed.
+        - button "Replay" [ref=e54] [cursor=pointer]
+      - generic [ref=e23]: Terminal ready
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - heading "WebSocket Terminal" [level=2] [ref=e28]
+        - paragraph [ref=e29]:
+          - text: Connects to a local PTY server via WebSocket. Start the server with
+          - code [ref=e30]: cargo run -p alacritty_pty_server
+          - text: ", then click the terminal and type."
+      - generic [ref=e35]: Connected to ws://localhost:7681
+    - generic [ref=e38]:
+      - generic [ref=e39]:
+        - heading "WebContainer Terminal" [level=2] [ref=e40]
+        - paragraph [ref=e41]: Runs a Node.js shell entirely in your browser using WebContainers. No server needed — the VM runs client-side.
+        - generic [ref=e42]: Shell running
+      - generic [ref=e47]: Terminal ready
+  - contentinfo [ref=e50]:
+    - paragraph [ref=e51]:
+      - link "GitHub" [ref=e52] [cursor=pointer]:
+        - /url: https://github.com/marksverdhei/alacritty
+      - text: · Built with Alacritty + Rust + wasm-bindgen + SvelteKit

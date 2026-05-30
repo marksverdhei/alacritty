@@ -32,6 +32,7 @@ web-sys = { version = "0.3", features = [
     "MouseEvent",
     "WheelEvent",
     "HtmlElement",
+    "CssStyleDeclaration",
     "ResizeObserver",
     "ResizeObserverEntry",
     "ResizeObserverSize",
@@ -40,17 +41,24 @@ web-sys = { version = "0.3", features = [
     "Clipboard",
     "console",
     "Performance",
-    "GpuCanvasContext",
     "ImageData",
 ] }
 js-sys = "0.3"
-wgpu = { version = "24", features = ["webgl"] }
-bytemuck = { version = "1", features = ["derive"] }
+# wgpu is gated behind the `wgpu` feature. The current build defaults to the
+# Canvas 2D backend, which is faster than xterm.js for typical terminal output
+# (~2× at 1MB+ payloads) and adds zero MB of wgpu shader/runtime to the wasm
+# binary. Enable `--features wgpu` if you want the experimental WebGPU path.
+wgpu = { version = "24", features = ["webgl"], optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
 log = "0.4"
 console_log = "1"
 console_error_panic_hook = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
+
+[features]
+default = []
+wgpu = ["dep:wgpu", "dep:bytemuck", "web-sys/GpuCanvasContext"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

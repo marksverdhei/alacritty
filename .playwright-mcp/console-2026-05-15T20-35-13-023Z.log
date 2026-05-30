@@ -1,0 +1,18 @@
+[     455ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     837ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     863ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=1148x574 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     864ms] [INFO] Initial grid: 143x33 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     867ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     871ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     872ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=1148x574 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     873ms] [INFO] Initial grid: 143x33 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     874ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     875ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     876ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=1148x574 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     877ms] [INFO] Initial grid: 143x33 @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     877ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1590
+[     902ms] [LOG] WebSocket connection opened @ :2
+[    1497ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1590
+[    2515ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://igikv8ex74pho2vhkgo28y3c873zlz-niol.w-corp-staticblitz.com/blitz.4c73681d.js:18
+[    4347ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.4c73681d.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0
+[   16121ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1590

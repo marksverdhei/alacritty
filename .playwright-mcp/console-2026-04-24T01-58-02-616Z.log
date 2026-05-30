@@ -1,0 +1,15 @@
+[      23ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     202ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1542
+[     620ms] [INFO] Canvas2D renderer[0]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[     620ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[     622ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1542
+[    1080ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1542
+[   15825ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1542
+[   76229ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1542
+[   76230ms] [INFO] Canvas2D renderer[1]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[   76230ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1542
+[   76231ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1542
+[   76236ms] [ERROR] WebSocket connection to 'ws://localhost:7681/' failed: Error during WebSocket handshake: net::ERR_CONNECTION_RESET @ http://localhost:5191/src/routes/compare/+page.svelte?t=1776995958776:271
+[   76245ms] Error: Attempt to use a moved value
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:444:40)
+    at ResizeObserver.syncSize (http://localhost:5191/src/routes/compare/+page.svelte?t=1776995829006:239:28)

@@ -2,13 +2,28 @@
 	import { onMount } from 'svelte';
 	import AlacrittyTerminal from '$lib/components/AlacrittyTerminal.svelte';
 	import { replayFrames } from '$lib/replay-data';
+	import { loadAlacrittyConfig, type AlacrittyConfig } from '$lib/alacritty-config';
 
 	let replayTerminal: any = null;
 	let replayRunning = $state(false);
 
-	let webcontainerTerminal: any = null;
 	let webcontainerStatus = $state('Not started');
-	let webcontainerSupported = $state(true);
+
+	// Pull the user's ~/.config/alacritty/alacritty.toml (copied into static/
+	// at build time) so all three cards render with their actual theme + font.
+	let alacrittyConfig = $state<AlacrittyConfig | null>(null);
+	let configLabel = $state('loading config…');
+	onMount(async () => {
+		const cfg = await loadAlacrittyConfig();
+		if (cfg) {
+			alacrittyConfig = cfg;
+			configLabel = cfg.fontFamily
+				? `Using ${cfg.fontFamily} @ ${cfg.fontSize ?? '14'}pt + theme palette`
+				: 'Using your config palette';
+		} else {
+			configLabel = 'No alacritty.toml found — using defaults';
+		}
+	});
 
 	// Replay logic: feed pre-recorded frames into the terminal.
 	async function startReplay(terminal: any) {
@@ -21,18 +36,27 @@
 		replayRunning = true;
 
 		const encoder = new TextEncoder();
+		// Capture the specific instance — don't follow later reassignments of
+		// replayTerminal during the loop's async waits.
+		const target = replayTerminal;
 		for (const [delay, data] of replayFrames) {
-			if (!replayTerminal) break;
+			if (!target) break;
 			await new Promise((r) => setTimeout(r, delay));
-			replayTerminal.feed(encoder.encode(data));
+			target.feed(encoder.encode(data));
 		}
 
 		replayRunning = false;
 	}
 
-	// WebContainer logic: boot a VM and spawn a shell.
+	// WebContainer logic: boot a VM and spawn a shell. The terminal is the
+	// AlacrittyTerminal instance — we set `webcontainerInput` so the component's
+	// keydown/paste handlers feed bytes to us, then we forward them to the
+	// shell's stdin. This way the WebContainer card still gets scrollback,
+	// selection, paste, Ctrl+Shift+C — everything the other cards have.
+	const decoder = new TextDecoder();
+	let webcontainerInput: ((bytes: Uint8Array) => void) | null = $state(null);
+
 	async function initWebContainer(terminal: any) {
-		webcontainerTerminal = terminal;
 		webcontainerStatus = 'Booting WebContainer...';
 
 		try {
@@ -43,42 +67,36 @@
 			const proc = await wc.spawn('jsh');
 			webcontainerStatus = 'Shell running';
 
+			// One writer for the lifetime of the process, not one per keystroke.
+			const writer = proc.input.getWriter();
+			webcontainerInput = (bytes: Uint8Array) => {
+				writer.write(decoder.decode(bytes)).catch((err) => {
+					console.error('WebContainer write failed:', err);
+				});
+			};
+
 			// Pipe shell output to terminal.
 			const reader = proc.output.getReader();
 			const encoder = new TextEncoder();
 			(async () => {
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					// value is a string from WebContainers
-					if (typeof value === 'string') {
-						terminal.feed(encoder.encode(value));
-					} else {
-						terminal.feed(value);
+				try {
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+						if (typeof value === 'string') {
+							terminal.feed(encoder.encode(value));
+						} else {
+							terminal.feed(value);
+						}
 					}
+					webcontainerStatus = 'Shell exited';
+				} catch (err: any) {
+					webcontainerStatus = `Output error: ${err.message ?? err}`;
 				}
 			})();
-
-			// Pipe terminal keyboard input to shell stdin.
-			// We override the terminal's keydown handler to write to the process.
-			const canvas = terminal.canvas || document.querySelector('.webcontainer-terminal canvas');
-			if (canvas) {
-				canvas.addEventListener('keydown', (e: KeyboardEvent) => {
-					const bytes = mapKeyToBytes(e);
-					if (bytes) {
-						e.preventDefault();
-						e.stopPropagation();
-						const writer = proc.input.getWriter();
-						writer.write(new TextDecoder().decode(bytes));
-						writer.releaseLock();
-					}
-				}, { capture: true });
-			}
 		} catch (e: any) {
 			webcontainerStatus = `Failed: ${e.message}`;
-			webcontainerSupported = false;
 			console.error('WebContainer init failed:', e);
-			// Show error in terminal
 			const encoder = new TextEncoder();
 			terminal.feed(encoder.encode(
 				`\x1b[31mWebContainer initialization failed.\x1b[0m\r\n` +
@@ -89,27 +107,6 @@
 		}
 	}
 
-	function mapKeyToBytes(e: KeyboardEvent): Uint8Array | null {
-		if (e.ctrlKey && e.key.length === 1) {
-			const code = e.key.toUpperCase().charCodeAt(0) - 64;
-			if (code >= 0 && code <= 31) return new Uint8Array([code]);
-		} else if (e.key === 'Enter') return new Uint8Array([13]);
-		else if (e.key === 'Backspace') return new Uint8Array([127]);
-		else if (e.key === 'Tab') return new Uint8Array([9]);
-		else if (e.key === 'Escape') return new Uint8Array([27]);
-		else if (e.key === 'ArrowUp') return new Uint8Array([27, 91, 65]);
-		else if (e.key === 'ArrowDown') return new Uint8Array([27, 91, 66]);
-		else if (e.key === 'ArrowRight') return new Uint8Array([27, 91, 67]);
-		else if (e.key === 'ArrowLeft') return new Uint8Array([27, 91, 68]);
-		else if (e.key === 'Home') return new Uint8Array([27, 91, 72]);
-		else if (e.key === 'End') return new Uint8Array([27, 91, 70]);
-		else if (e.key === 'Delete') return new Uint8Array([27, 91, 51, 126]);
-		else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey)
-			return new TextEncoder().encode(e.key);
-		else if (e.altKey && e.key.length === 1)
-			return new Uint8Array([27, ...new TextEncoder().encode(e.key)]);
-		return null;
-	}
 </script>
 
 <div class="page">
@@ -128,6 +125,12 @@
 			<span class="badge">WebSocket PTY</span>
 			<span class="badge">MIT/Apache-2.0</span>
 		</div>
+		<p class="cta">
+			<a href="/compare">Side-by-side vs xterm.js →</a>
+			<span class="cta-sep">·</span>
+			<a href="/library">Component library →</a>
+		</p>
+		<p class="config-line">{configLabel}</p>
 	</header>
 
 	<!-- Terminal Cards -->
@@ -148,6 +151,7 @@
 				<AlacrittyTerminal
 					fontSize={14}
 					theme="dark"
+					{alacrittyConfig}
 					onTerminalReady={startReplay}
 				/>
 			</div>
@@ -168,6 +172,7 @@
 					wsUrl="ws://localhost:7681"
 					fontSize={14}
 					theme="dark"
+					{alacrittyConfig}
 				/>
 			</div>
 		</div>
@@ -186,7 +191,9 @@
 				<AlacrittyTerminal
 					fontSize={14}
 					theme="dark"
+					{alacrittyConfig}
 					onTerminalReady={initWebContainer}
+					onInput={webcontainerInput ?? undefined}
 				/>
 			</div>
 		</div>
@@ -255,6 +262,32 @@
 		padding: 4px 12px;
 		border-radius: 12px;
 		font-size: 0.8rem;
+	}
+
+	.cta {
+		margin-top: 1rem;
+		font-size: 0.95rem;
+	}
+	.cta a {
+		color: #81a2be;
+		text-decoration: none;
+		border-bottom: 1px dashed #81a2be;
+		padding-bottom: 2px;
+	}
+	.cta a:hover {
+		color: #b5bd68;
+		border-bottom-color: #b5bd68;
+	}
+	.cta-sep {
+		color: #4a4f57;
+		margin: 0 0.5rem;
+	}
+
+	.config-line {
+		margin-top: 0.6rem;
+		font-size: 0.78rem;
+		color: #6f7782;
+		font-family: ui-monospace, Menlo, monospace;
 	}
 
 	/* Terminal Cards */

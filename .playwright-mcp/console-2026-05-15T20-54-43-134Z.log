@@ -1,0 +1,17 @@
+[      75ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5191/favicon.png:0
+[     332ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     858ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=572x286 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     859ms] [INFO] Initial grid: 71x16 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     861ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     874ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     875ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=572x286 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     876ms] [INFO] Initial grid: 71x16 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     876ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     877ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     879ms] [INFO] Canvas2D renderer: cell=8x17, dpr=1, canvas=572x286 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     879ms] [INFO] Initial grid: 71x16 @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     880ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1608
+[     928ms] [LOG] WebSocket connection opened @ :2
+[    1614ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1608
+[    2725ms] [WARNING] [Contextify] [WARNING] running source code in new context @ https://igikv8ex74pho2vhkgo28y3c873zlz-niol.w-corp-staticblitz.com/blitz.4c73681d.js:18
+[    4390ms] [WARNING] The resource https://w-corp-staticblitz.com/fetch.worker.4c73681d.js was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://stackblitz.com/headless?version=1.6.1:0

@@ -1,0 +1,14 @@
+[      94ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1579
+[      96ms] [INFO] Canvas2D renderer[0]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1579
+[      96ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1579
+[      97ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1579
+[     596ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1579
+[  300137ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1579
+[ 3425862ms] [INFO] Initializing AlacrittyTerminal @ http://localhost:5191/pkg/alacritty_web.js:1579
+[ 3425864ms] [INFO] Canvas2D renderer[1]: cell=8x17, dpr=1, canvas=654x548 @ http://localhost:5191/pkg/alacritty_web.js:1579
+[ 3425864ms] [INFO] Initial grid: 81x32 @ http://localhost:5191/pkg/alacritty_web.js:1579
+[ 3425864ms] [INFO] wgpu upgrade not requested, using Canvas 2D @ http://localhost:5191/pkg/alacritty_web.js:1579
+[ 3425875ms] Error: Attempt to use a moved value
+    at AlacrittyTerminal.cell_width (http://localhost:5191/pkg/alacritty_web.js:444:40)
+    at ResizeObserver.syncSize (http://localhost:5191/src/routes/compare/+page.svelte?t=1776999420730:289:28)
+[ 3426318ms] [INFO] Terminal title: me@centurion:~ @ http://localhost:5191/pkg/alacritty_web.js:1579

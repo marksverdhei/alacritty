@@ -1,9 +1,11 @@
 //! Web terminal state wrapper around alacritty_terminal::Term.
 
 use alacritty_terminal::event::{Event, EventListener};
-use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::sync::FairMutex;
-use alacritty_terminal::term::Config as TermConfig;
+use alacritty_terminal::term::{Config as TermConfig, TermMode};
 use alacritty_terminal::Term;
 use alacritty_terminal::vte::ansi;
 
@@ -199,5 +201,95 @@ impl WebTerminal {
     pub fn selection_to_string(&self) -> Option<String> {
         let term = self.term.lock();
         term.selection_to_string()
+    }
+
+    /// Scroll the display viewport by `delta` lines. Positive scrolls into
+    /// scrollback (towards older output), negative scrolls towards the bottom.
+    pub fn scroll_display(&mut self, delta: i32) {
+        let mut term = self.term.lock();
+        term.scroll_display(Scroll::Delta(delta));
+    }
+
+    /// Jump the display viewport to the bottom (most recent output).
+    pub fn scroll_to_bottom(&mut self) {
+        let mut term = self.term.lock();
+        term.scroll_display(Scroll::Bottom);
+    }
+
+    /// Start a new simple selection at the given viewport cell.
+    /// `viewport_row` is 0..screen_lines, where 0 is the top of what's
+    /// currently on screen (accounting for scrollback).
+    pub fn selection_start(&mut self, viewport_row: i32, column: usize, side_left: bool) {
+        let mut term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line_index = viewport_row - display_offset;
+        let point = Point::new(Line(line_index), Column(column));
+        let side = if side_left { Side::Left } else { Side::Right };
+        term.selection = Some(Selection::new(SelectionType::Simple, point, side));
+    }
+
+    /// Extend the active selection to the given viewport cell.
+    pub fn selection_update(&mut self, viewport_row: i32, column: usize, side_left: bool) {
+        let mut term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line_index = viewport_row - display_offset;
+        let point = Point::new(Line(line_index), Column(column));
+        let side = if side_left { Side::Left } else { Side::Right };
+        if let Some(selection) = term.selection.as_mut() {
+            selection.update(point, side);
+        }
+    }
+
+    /// Clear any active selection.
+    pub fn selection_clear(&mut self) {
+        let mut term = self.term.lock();
+        term.selection = None;
+    }
+
+    /// Select a word (via semantic boundaries) at the given viewport cell.
+    pub fn selection_word(&mut self, viewport_row: i32, column: usize) {
+        let mut term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line_index = viewport_row - display_offset;
+        let point = Point::new(Line(line_index), Column(column));
+        term.selection = Some(Selection::new(SelectionType::Semantic, point, Side::Left));
+        if let Some(sel) = term.selection.as_mut() {
+            sel.update(point, Side::Right);
+        }
+    }
+
+    /// Select a whole line at the given viewport cell.
+    pub fn selection_line(&mut self, viewport_row: i32, column: usize) {
+        let mut term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line_index = viewport_row - display_offset;
+        let point = Point::new(Line(line_index), Column(column));
+        term.selection = Some(Selection::new(SelectionType::Lines, point, Side::Left));
+        if let Some(sel) = term.selection.as_mut() {
+            sel.update(point, Side::Right);
+        }
+    }
+
+    /// Whether the terminal is currently in bracketed-paste mode.
+    pub fn bracketed_paste(&self) -> bool {
+        let term = self.term.lock();
+        term.mode().contains(TermMode::BRACKETED_PASTE)
+    }
+
+    /// Packed mouse-reporting flags for the JS side to decide whether to
+    /// forward mouse events to the PTY instead of starting a selection.
+    /// Bit 0 = click reporting (DECSET 1000)
+    /// Bit 1 = drag reporting  (DECSET 1002)
+    /// Bit 2 = motion reporting (DECSET 1003)
+    /// Bit 3 = SGR extended encoding (DECSET 1006)
+    pub fn mouse_mode_bits(&self) -> u32 {
+        let term = self.term.lock();
+        let m = term.mode();
+        let mut bits = 0u32;
+        if m.contains(TermMode::MOUSE_REPORT_CLICK) { bits |= 1; }
+        if m.contains(TermMode::MOUSE_DRAG)         { bits |= 2; }
+        if m.contains(TermMode::MOUSE_MOTION)       { bits |= 4; }
+        if m.contains(TermMode::SGR_MOUSE)          { bits |= 8; }
+        bits
     }
 }

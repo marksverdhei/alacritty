@@ -1,0 +1,81 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Alacritty WASM vs xterm.js" [level=1] [ref=e5]
+    - paragraph [ref=e6]: Same PTY, tee'd into both terminals. Type in either pane — both render the shell's response.
+    - generic [ref=e7]:
+      - generic [ref=e8]: open
+      - generic [ref=e9]: "in: 865B"
+      - generic [ref=e10]: "out: 10B"
+      - generic [ref=e11]: "xterm write: 0.00ms"
+      - generic [ref=e12]: "alacritty feed: 0.00ms"
+  - generic [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - text: xterm.js
+        - generic [ref=e17]: DOM + Canvas renderer
+      - generic [ref=e22]:
+        - textbox "Terminal input" [active] [ref=e23]
+        - generic:
+          - generic:
+            - generic: "74"
+          - generic:
+            - generic: "75"
+          - generic:
+            - generic: "76"
+          - generic:
+            - generic: "77"
+          - generic:
+            - generic: "78"
+          - generic:
+            - generic: "79"
+          - generic:
+            - generic: "80"
+          - generic:
+            - generic: "81"
+          - generic:
+            - generic: "82"
+          - generic:
+            - generic: "83"
+          - generic:
+            - generic: "84"
+          - generic:
+            - generic: "85"
+          - generic:
+            - generic: "86"
+          - generic:
+            - generic: "87"
+          - generic:
+            - generic: "88"
+          - generic:
+            - generic: "89"
+          - generic:
+            - generic: "90"
+          - generic:
+            - generic: "91"
+          - generic:
+            - generic: "92"
+          - generic:
+            - generic: "93"
+          - generic:
+            - generic: "94"
+          - generic:
+            - generic: "95"
+          - generic:
+            - generic: "96"
+          - generic:
+            - generic: "97"
+          - generic:
+            - generic: "98"
+          - generic:
+            - generic: "99"
+          - generic:
+            - generic: "100"
+          - generic:
+            - generic: centurion
+            - generic: ~
+            - generic:  .venv
+          - generic:
+            - generic: ❯
+    - generic [ref=e25]:
+      - text: Alacritty (WASM)
+      - generic [ref=e27]: Rust → wasm32 → Canvas2D
