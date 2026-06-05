@@ -14,6 +14,7 @@
  */
 export function mapKeyToBytes(e: KeyboardEvent, modes: number = 0): Uint8Array | null {
 	const appCursor = (modes & 1) !== 0;
+	const kittyDisambiguate = (modes & 8) !== 0;
 
 	// xterm modifier encoding: 1 + shift + 2·alt + 4·ctrl + 8·meta. The result
 	// is in 1..16; we emit a modified sequence whenever it's > 1.
@@ -23,6 +24,42 @@ export function mapKeyToBytes(e: KeyboardEvent, modes: number = 0): Uint8Array |
 		((e.altKey || e.metaKey) ? 2 : 0) +
 		(e.ctrlKey ? 4 : 0);
 	const hasMod = mod > 1;
+
+	// Kitty keyboard protocol — DISAMBIGUATE_ESC_CODES mode.
+	//
+	// Apps that enabled `CSI > 1 u` (notably neovim and helix) want
+	// unambiguous sequences for keys whose legacy encoding overlaps:
+	//   * Ctrl+I shares 0x09 with Tab          → kitty emits `\e[105;5u`
+	//   * Ctrl+M shares 0x0D with Enter        → `\e[109;5u`
+	//   * Ctrl+[ shares 0x1b with Escape       → `\e[91;5u`
+	//   * Shift+Tab shares with no-op          → `\e[9;2u`
+	// Plain unmodified keys still emit their legacy byte (so terminfo and
+	// regular shells keep working); only ambiguous-with-control or
+	// otherwise-collision combinations switch to CSI u form.
+	if (kittyDisambiguate) {
+		const csiU = (codepoint: number): Uint8Array => {
+			const enc = new TextEncoder();
+			return mod > 1
+				? enc.encode(`\x1b[${codepoint};${mod}u`)
+				: enc.encode(`\x1b[${codepoint}u`);
+		};
+		// Ambiguous-with-Tab: Ctrl+I.
+		if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'i' || e.key === 'I')) {
+			return csiU(105); // lowercase 'i'
+		}
+		// Ambiguous-with-Enter: Ctrl+M.
+		if (e.ctrlKey && !e.altKey && !e.metaKey && (e.key === 'm' || e.key === 'M')) {
+			return csiU(109);
+		}
+		// Ambiguous-with-Escape: Ctrl+[.
+		if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === '[') {
+			return csiU(91);
+		}
+		// Shift+Tab in kitty mode prefers CSI u over CSI Z.
+		if (e.key === 'Tab' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+			return csiU(9);
+		}
+	}
 
 	// Ctrl + letter → control character (^A..^Z, plus a few extras).
 	// Handled before the modified-arrow path because Ctrl+letter is shorter

@@ -47,6 +47,17 @@ test.describe('mapKeyToBytes', () => {
 				homeAppCursor: dec(map(ev('Home'), 1)),
 				// Ctrl+C still emits ^C, not modified-letter.
 				ctrlC: dec(map(ev('c', { ctrlKey: true }), 0)),
+				// Kitty keyboard DISAMBIGUATE mode (modes bit 3 = 8).
+				// Plain unmodified keys still emit their legacy byte.
+				kittyTabPlain: dec(map(ev('Tab'), 8)),
+				// Ctrl+I in kitty mode → CSI 105 ; 5 u (was 0x09).
+				kittyCtrlI: dec(map(ev('i', { ctrlKey: true }), 8)),
+				// Ctrl+M in kitty mode → CSI 109 ; 5 u (was 0x0D).
+				kittyCtrlM: dec(map(ev('m', { ctrlKey: true }), 8)),
+				// Shift+Tab in kitty mode → CSI 9 ; 2 u (was CSI Z).
+				kittyShiftTab: dec(map(ev('Tab', { shiftKey: true }), 8)),
+				// Ctrl+[ in kitty mode → CSI 91 ; 5 u (was ESC).
+				kittyCtrlBracket: dec(map(ev('[', { ctrlKey: true }), 8)),
 			};
 		});
 
@@ -70,5 +81,17 @@ test.describe('mapKeyToBytes', () => {
 		expect(results.homeAppCursor).toBe('1b 4f 48');
 		// Ctrl+C = 0x03.
 		expect(results.ctrlC).toBe('03');
+
+		// Kitty keyboard DISAMBIGUATE assertions.
+		// Plain Tab still emits 0x09 — only ambiguous-with-Ctrl combos switch form.
+		expect(results.kittyTabPlain).toBe('09');
+		// Ctrl+I → ESC [ 105 ; 5 u → "1b 5b 31 30 35 3b 35 75".
+		expect(results.kittyCtrlI).toBe('1b 5b 31 30 35 3b 35 75');
+		// Ctrl+M → ESC [ 109 ; 5 u → "1b 5b 31 30 39 3b 35 75".
+		expect(results.kittyCtrlM).toBe('1b 5b 31 30 39 3b 35 75');
+		// Shift+Tab → ESC [ 9 ; 2 u → "1b 5b 39 3b 32 75".
+		expect(results.kittyShiftTab).toBe('1b 5b 39 3b 32 75');
+		// Ctrl+[ → ESC [ 91 ; 5 u → "1b 5b 39 31 3b 35 75".
+		expect(results.kittyCtrlBracket).toBe('1b 5b 39 31 3b 35 75');
 	});
 });

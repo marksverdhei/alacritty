@@ -190,6 +190,22 @@ fn osc_title_is_captured_and_resettable() {
 }
 
 #[test]
+fn keyboard_mode_bits_track_kitty_disambiguate() {
+    // `CSI > 1 u` enables kitty keyboard DISAMBIGUATE_ESC_CODES (Push).
+    // `CSI < 1 u` disables it (Pop). DISAMBIGUATE is bit 3 in our packed
+    // representation.
+    let mut t = WebTerminal::new(10, 4);
+    assert_eq!(t.keyboard_mode_bits() & 8, 0);
+    t.process_bytes(b"\x1b[>1u");
+    assert!(
+        t.keyboard_mode_bits() & 8 != 0,
+        "DISAMBIGUATE bit should be set after CSI > 1 u"
+    );
+    t.process_bytes(b"\x1b[<1u");
+    assert_eq!(t.keyboard_mode_bits() & 8, 0, "Pop should disable it");
+}
+
+#[test]
 fn keyboard_mode_bits_track_app_cursor_and_focus() {
     // DECCKM (CSI ? 1 h) sets APP_CURSOR; DECPAM (ESC =) sets APP_KEYPAD;
     // DECSET 1004 enables focus reporting.

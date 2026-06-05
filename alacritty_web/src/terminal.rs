@@ -228,7 +228,10 @@ impl WebTerminal {
     pub fn new(cols: u16, lines: u16) -> Self {
         let event_proxy = WebEventProxy::new();
         let size = TermSize { lines: lines as usize, cols: cols as usize };
-        let config = TermConfig::default();
+        // Opt into kitty keyboard protocol — without this, alacritty_terminal's
+        // push_keyboard_mode is a no-op so DISAMBIGUATE_ESC_CODES never sticks.
+        let mut config = TermConfig::default();
+        config.kitty_keyboard = true;
         let term = Term::new(config, &size, event_proxy.clone());
         let term = Rc::new(FairMutex::new(term));
 
@@ -421,17 +424,21 @@ impl WebTerminal {
     }
 
     /// Packed keyboard-relevant mode flags. JS reads this once per keystroke
-    /// instead of making three wasm calls.
+    /// instead of making four wasm calls.
     /// Bit 0 = APP_CURSOR (DECCKM, `\e[?1h`) — arrow keys send `\eOA` instead of `\e[A`
     /// Bit 1 = APP_KEYPAD (DECPAM)
     /// Bit 2 = FOCUS_IN_OUT (DECSET 1004) — host should send `\e[I` / `\e[O` on focus changes
+    /// Bit 3 = DISAMBIGUATE_ESC_CODES (kitty keyboard `CSI > 1 u`) — emit CSI u
+    ///         sequences for keys whose legacy encoding is ambiguous
+    ///         (Ctrl+I vs Tab, Ctrl+M vs Enter, Ctrl+[ vs Escape, etc.)
     pub fn keyboard_mode_bits(&self) -> u32 {
         let term = self.term.lock();
         let m = term.mode();
         let mut bits = 0u32;
-        if m.contains(TermMode::APP_CURSOR)   { bits |= 1; }
-        if m.contains(TermMode::APP_KEYPAD)   { bits |= 2; }
-        if m.contains(TermMode::FOCUS_IN_OUT) { bits |= 4; }
+        if m.contains(TermMode::APP_CURSOR)             { bits |= 1; }
+        if m.contains(TermMode::APP_KEYPAD)             { bits |= 2; }
+        if m.contains(TermMode::FOCUS_IN_OUT)           { bits |= 4; }
+        if m.contains(TermMode::DISAMBIGUATE_ESC_CODES) { bits |= 8; }
         bits
     }
 }
