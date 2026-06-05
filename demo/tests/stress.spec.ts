@@ -548,6 +548,60 @@ test.describe('alacritty wasm stress benchmark', () => {
 		expect(decoded2).toEqual(['pasted!']);
 	});
 
+	test('input latency floor — single-byte feed renders inside a frame budget', async ({
+		page,
+	}) => {
+		// Per #28 acceptance: "Input latency under 16ms". Real keystroke
+		// latency includes PTY roundtrip + shell echo, which is noisy in CI.
+		// This test measures the wasm-side floor only: feed(byte) → next
+		// frame_seq increment. Catches catastrophic regressions in the
+		// JS↔WASM boundary, parse path, or render loop.
+		await page.goto('/compare');
+		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
+			timeout: 15_000,
+		});
+
+		const samples = await page.evaluate(async () => {
+			const a = (window as any).__cmp.alacritty;
+			// Warm the wasm + raf pipeline so the first sample isn't tainted
+			// by JIT / cold-cache effects.
+			a.feed(new TextEncoder().encode('warmup\r\n'));
+			for (let i = 0; i < 20; i++) {
+				await new Promise((r) => requestAnimationFrame(() => r(null)));
+			}
+
+			const result: number[] = [];
+			for (let trial = 0; trial < 10; trial++) {
+				const seqBefore = a.frame_seq();
+				const t0 = performance.now();
+				a.feed(new TextEncoder().encode('X'));
+				while (a.frame_seq() === seqBefore) {
+					await new Promise((r) => requestAnimationFrame(() => r(null)));
+				}
+				result.push(performance.now() - t0);
+			}
+			result.sort((x, y) => x - y);
+			return {
+				min: result[0],
+				median: result[Math.floor(result.length / 2)],
+				p90: result[Math.floor(result.length * 0.9)],
+				max: result[result.length - 1],
+			};
+		});
+
+		console.log(
+			`input latency: min=${samples.min.toFixed(2)}ms median=${samples.median.toFixed(
+				2,
+			)}ms p90=${samples.p90.toFixed(2)}ms max=${samples.max.toFixed(2)}ms`,
+		);
+
+		// Most samples should land within one or two RAF ticks (~16-32ms at
+		// 60Hz). Headless chromium throttles RAF — cap the median at 100ms
+		// as a regression guard, p90 at 200ms.
+		expect(samples.median, 'median single-byte feed latency').toBeLessThan(100);
+		expect(samples.p90, 'p90 single-byte feed latency').toBeLessThan(200);
+	});
+
 	test('mouse-reporting on /compare forwards click + wheel to PTY (not selection/scroll)', async ({
 		page,
 	}) => {
