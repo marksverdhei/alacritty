@@ -310,7 +310,14 @@ pub async fn handle_connection(
         };
         info!("Child exited with code: {:?}", exit_code);
         let msg = protocol::encode_exit(exit_code);
-        if let Err(e) = ws_tx_exit.blocking_send(Message::Binary(msg.into())) {
+        // If the channel is already closed, the client disconnected first
+        // and the write-task has torn down. The exit notification can't
+        // reach anyone — that's expected, not a warning condition. See #51
+        // for the deeper architectural fix (sharing ws_sink between Task 2
+        // and Task 4); silencing the noise is the minimal change.
+        if ws_tx_exit.is_closed() {
+            log::debug!("Skipping exit notification: client already disconnected");
+        } else if let Err(e) = ws_tx_exit.blocking_send(Message::Binary(msg.into())) {
             warn!("Failed to send exit notification: {}", e);
         }
     });
