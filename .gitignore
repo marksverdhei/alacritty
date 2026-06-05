@@ -1,1 +1,15 @@
 target
+
+# Playwright MCP browser session artifacts — generated when an agent drives
+# the browser interactively; never useful to track.
+.playwright-mcp/
+
+# Playwright test output: traces, screenshots, error contexts. Regenerated
+# on every run. Match anywhere in the tree since `npx playwright test`
+# writes to cwd, not the project root.
+test-results/
+playwright-report/
+
+# Ad-hoc screenshots saved at the repo root during MCP verification runs.
+# Real artifacts live in tests/; these are scratch.
+/*.png

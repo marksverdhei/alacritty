@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { mapKeyToBytes } from '$lib/key-mapping';
+	import { wireTerminalCanvas } from '$lib/canvas-handlers';
 	import { loadAlacrittyConfig, applyAlacrittyConfig, type AlacrittyConfig } from '$lib/alacritty-config';
 	import { resolveTheme, themePalette, type Theme } from '$lib/themes';
 
@@ -33,6 +34,13 @@
 		themeName?: string;
 		/** Also expose the resolved Theme so chrome wrappers can colour borders. */
 		onThemeResolved?: (theme: Theme) => void;
+		/**
+		 * Optional callback fired whenever the shell pushes a new OSC 0/2
+		 * window title and the new value differs from the previous one. The
+		 * component polls at ~4 Hz; the parent decides whether to mirror it
+		 * into `document.title`, status chrome, etc.
+		 */
+		onTitle?: (title: string) => void;
 	}
 
 	let {
@@ -47,7 +55,8 @@
 		onInput = undefined,
 		alacrittyConfig = undefined,
 		themeName = undefined,
-		onThemeResolved = undefined
+		onThemeResolved = undefined,
+		onTitle = undefined
 	}: Props = $props();
 
 	let canvasEl: HTMLCanvasElement;
@@ -55,7 +64,10 @@
 	let status = $state<'loading' | 'ready' | 'connected' | 'error'>('loading');
 	let statusMessage = $state('Initializing...');
 	let wsPollHandle: number | null = null;
+	let titlePollHandle: number | null = null;
+	let lastTitle: string | undefined = undefined;
 	let resizeObserver: ResizeObserver | null = null;
+	let unwireCanvas: (() => void) | null = null;
 
 	// Route input bytes — keystrokes or pasted text — to the right sink.
 	// When the parent supplied an `onInput` callback we deliver bytes there and
@@ -104,174 +116,17 @@
 			}).catch(() => {});
 			return;
 		}
-		const bytes = mapKeyToBytes(e);
+		const modes = terminal.keyboard_mode_bits?.() ?? 0;
+		const bytes = mapKeyToBytes(e, modes);
 		if (bytes) {
 			e.preventDefault();
 			deliverInput(bytes);
 		}
 	}
 
-	// Pack DOM modifier keys into the bit format `report_mouse` expects.
-	function modBits(e: MouseEvent | WheelEvent): number {
-		return (e.shiftKey ? 1 : 0) | ((e.altKey || e.metaKey) ? 2 : 0) | (e.ctrlKey ? 4 : 0);
-	}
-
-	function handleWheel(e: WheelEvent) {
-		if (!terminal) return;
-		// When an app like htop/vim has mouse reporting on, wheel events
-		// become button events (64 = wheel-up, 65 = wheel-down). Skip the
-		// scrollback adjustment in that case — let the app handle it.
-		if (terminal.mouse_reporting_active?.()) {
-			const cell = cellFromEvent(e as unknown as MouseEvent);
-			if (cell) {
-				const direction = e.deltaY < 0 ? 64 : 65;
-				const bytes = terminal.report_mouse(direction, 0, cell.col, cell.row, modBits(e));
-				if (bytes) {
-					e.preventDefault();
-					deliverInput(bytes);
-					return;
-				}
-			}
-		}
-		// Normalize deltaY into line-count. Chrome reports pixels, Firefox
-		// reports lines via deltaMode=1. Clamp to keep single wheel ticks sensible.
-		const lineHeight = terminal.cell_height?.() || 16;
-		let lines: number;
-		if (e.deltaMode === 1) {
-			lines = e.deltaY;
-		} else {
-			lines = e.deltaY / lineHeight;
-		}
-		// Positive deltaY = scroll DOWN in the document, which in terminal
-		// scrollback means moving towards newer output (negative delta).
-		const delta = -Math.round(lines * 3);
-		if (delta === 0) return;
-		e.preventDefault();
-		terminal.scroll(delta);
-	}
-
-	// Selection state (JS-side mirror — actual cells live in the wasm Term).
-	let dragging = false;
-	// Which button is held during mouse-reported drags; `null` when no
-	// button is pressed. Drives the motion-event encoding (button+32).
-	let reportedButton: number | null = null;
-
-	function cellFromEvent(e: MouseEvent): { row: number; col: number; sideLeft: boolean } | null {
-		if (!terminal) return null;
-		const cellW = terminal.cell_width();
-		const cellH = terminal.cell_height();
-		if (cellW <= 0 || cellH <= 0) return null;
-		const rect = canvasEl.getBoundingClientRect();
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
-		const col = Math.max(0, Math.min(terminal.cols() - 1, Math.floor(x / cellW)));
-		const row = Math.max(0, Math.min(terminal.rows() - 1, Math.floor(y / cellH)));
-		const inCellX = x - col * cellW;
-		return { row, col, sideLeft: inCellX < cellW / 2 };
-	}
-
-	function handleMouseDown(e: MouseEvent) {
-		if (!terminal) return;
-		const cell = cellFromEvent(e);
-		if (!cell) return;
-		// Mouse reporting takes priority: when an app like vim/htop has
-		// DECSET 1000/1002/1003 on, the mouse drives the app, not the
-		// browser-side selection. Shift acts as the standard "force browser
-		// selection" override that xterm-family terminals use.
-		if (terminal.mouse_reporting_active?.() && !e.shiftKey) {
-			const button = e.button === 1 ? 1 : e.button === 2 ? 2 : 0;
-			const bytes = terminal.report_mouse(button, 0, cell.col, cell.row, modBits(e));
-			if (bytes) {
-				e.preventDefault();
-				deliverInput(bytes);
-				reportedButton = button;
-				canvasEl.focus();
-				return;
-			}
-		}
-		if (e.button !== 0) return; // left-click only for selection
-		// detail: 1 = single click, 2 = double, 3 = triple — matches native terms.
-		if (e.detail >= 3) {
-			terminal.selection_line(cell.row, cell.col);
-			// Auto-copy on triple-click.
-			const text = terminal.selection_text();
-			if (text) navigator.clipboard?.writeText(text).catch(() => {});
-			dragging = false;
-		} else if (e.detail === 2) {
-			terminal.selection_word(cell.row, cell.col);
-			const text = terminal.selection_text();
-			if (text) navigator.clipboard?.writeText(text).catch(() => {});
-			dragging = false;
-		} else {
-			terminal.selection_start(cell.row, cell.col, cell.sideLeft);
-			dragging = true;
-		}
-		canvasEl.focus();
-	}
-
-	function handleMouseMove(e: MouseEvent) {
-		if (!terminal) return;
-		// Mouse-reporting path: send motion events when the active mode wants
-		// them. `report_mouse` itself rejects motion events the mode hasn't
-		// asked for, so we always send and just discard the empty result.
-		if (terminal.mouse_reporting_active?.()) {
-			const cell = cellFromEvent(e);
-			if (!cell) return;
-			// Button 3 = "none held" in xterm encoding. For drag mode the
-			// rust side filters that out automatically.
-			const button = reportedButton ?? 3;
-			const bytes = terminal.report_mouse(button, 2, cell.col, cell.row, modBits(e));
-			if (bytes) {
-				deliverInput(bytes);
-				return;
-			}
-		}
-		if (!dragging) return;
-		const cell = cellFromEvent(e);
-		if (!cell) return;
-		terminal.selection_update(cell.row, cell.col, cell.sideLeft);
-	}
-
-	function handleMouseUp(e: MouseEvent) {
-		if (!terminal) return;
-		if (reportedButton !== null) {
-			const cell = cellFromEvent(e);
-			if (cell) {
-				const bytes = terminal.report_mouse(
-					reportedButton,
-					1,
-					cell.col,
-					cell.row,
-					modBits(e),
-				);
-				if (bytes) deliverInput(bytes);
-			}
-			reportedButton = null;
-			return;
-		}
-		if (!dragging) return;
-		dragging = false;
-		// Copy the selection to the clipboard if non-empty. This mirrors
-		// Alacritty's default "copy on selection" behaviour.
-		const text = terminal.selection_text();
-		if (text) {
-			navigator.clipboard?.writeText(text).catch(() => { /* permission denied */ });
-		}
-	}
-
-	// Named so onDestroy can remove them — anonymous arrows would leak.
-	function handleFocus() { terminal?.set_focused(true); }
-	function handleBlur() { terminal?.set_focused(false); }
-
-	// Suppress the browser context menu when mouse-reporting is on so right
-	// clicks reach the running app (e.g. `htop` menus). Shift-right-click is
-	// the standard escape to get the browser menu back.
-	function handleContextMenu(e: MouseEvent) {
-		if (!terminal) return;
-		if (terminal.mouse_reporting_active?.() && !e.shiftKey) {
-			e.preventDefault();
-		}
-	}
+	// Mouse, wheel, focus, contextmenu handlers all live in the shared
+	// wireTerminalCanvas helper — see $lib/canvas-handlers.ts. Keyboard
+	// (handleKeydown) stays here because the paste path is component-specific.
 
 	onMount(async () => {
 		try {
@@ -368,20 +223,32 @@
 			}
 
 			canvasEl.addEventListener('keydown', handleKeydown);
-			canvasEl.addEventListener('wheel', handleWheel, { passive: false });
-			canvasEl.addEventListener('focus', handleFocus);
-			canvasEl.addEventListener('blur', handleBlur);
-			canvasEl.addEventListener('mousedown', handleMouseDown);
-			canvasEl.addEventListener('contextmenu', handleContextMenu);
-			// Mouse move/up listen on window so dragging off-canvas still works.
-			window.addEventListener('mousemove', handleMouseMove);
-			window.addEventListener('mouseup', handleMouseUp);
+			// Wire the rest — mouse, wheel, focus/blur, contextmenu — via the
+			// shared helper. deliverInput handles the onInput vs internal-WS
+			// routing for us.
+			unwireCanvas = wireTerminalCanvas(canvasEl, terminal, {
+				sendInput: deliverInput,
+			});
 			// Seed the initial state from whatever the DOM says — if the
 			// canvas is already the active element, we want the filled cursor.
 			terminal.set_focused(document.activeElement === canvasEl);
 
 			if (onTerminalReady) {
 				onTerminalReady(terminal);
+			}
+
+			// Poll the OSC 0/2 title at 4 Hz and fire onTitle on change. Polling
+			// (vs. an FFI callback) keeps the JS↔WASM boundary trivial — no
+			// closure ownership to track.
+			if (onTitle) {
+				titlePollHandle = window.setInterval(() => {
+					if (!terminal) return;
+					const t = terminal.title?.();
+					if (t && t !== lastTitle) {
+						lastTitle = t;
+						onTitle(t);
+					}
+				}, 250);
 			}
 		} catch (e: any) {
 			status = 'error';
@@ -395,20 +262,21 @@
 			clearInterval(wsPollHandle);
 			wsPollHandle = null;
 		}
+		if (titlePollHandle !== null) {
+			clearInterval(titlePollHandle);
+			titlePollHandle = null;
+		}
 		if (resizeObserver) {
 			resizeObserver.disconnect();
 			resizeObserver = null;
 		}
 		if (canvasEl) {
 			canvasEl.removeEventListener('keydown', handleKeydown);
-			canvasEl.removeEventListener('wheel', handleWheel);
-			canvasEl.removeEventListener('mousedown', handleMouseDown);
-			canvasEl.removeEventListener('contextmenu', handleContextMenu);
-			canvasEl.removeEventListener('focus', handleFocus);
-			canvasEl.removeEventListener('blur', handleBlur);
 		}
-		window.removeEventListener('mousemove', handleMouseMove);
-		window.removeEventListener('mouseup', handleMouseUp);
+		if (unwireCanvas) {
+			unwireCanvas();
+			unwireCanvas = null;
+		}
 		if (terminal) {
 			try {
 				terminal.dispose();

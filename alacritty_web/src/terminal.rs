@@ -8,9 +8,11 @@ use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config as TermConfig, TermMode};
 use alacritty_terminal::Term;
 use alacritty_terminal::vte::ansi;
+use alacritty_terminal::vte::ansi::Rgb;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
@@ -44,6 +46,15 @@ pub enum ClipboardEvent {
     Load,
 }
 
+/// Maximum bell decay counter value. With a single BEL the renderer draws
+/// `BELL_DECAY_MAX` frames of fading overlay; consecutive bells re-saturate
+/// (so a stream of BELs still pulses visibly without infinitely accumulating).
+const BELL_DECAY_MAX: u8 = 4;
+
+/// Formatter handed in by `Event::ColorRequest` — takes the resolved colour
+/// and returns the OSC reply string the shell expects.
+pub type ColorReplyFormatter = Arc<dyn Fn(Rgb) -> String + Sync + Send + 'static>;
+
 /// Event listener that collects events for the web frontend.
 #[derive(Clone)]
 pub struct WebEventProxy {
@@ -51,6 +62,26 @@ pub struct WebEventProxy {
     clipboard_events: Rc<RefCell<Vec<ClipboardEvent>>>,
     /// Queue of PTY write requests (from OSC 52 load, PtyWrite events, etc.).
     pty_writes: Rc<RefCell<Vec<String>>>,
+    /// Latest OSC 0/2 window title. Updated as the shell sets it (so the
+    /// last-write-wins). JS polls via `AlacrittyTerminal::title()` and mirrors
+    /// the value into `document.title` if it wants the browser tab to track.
+    title: Rc<RefCell<Option<String>>>,
+    /// Bell decay counter — incremented to `BELL_DECAY_MAX` on each
+    /// `Event::Bell`, decremented once per frame by the render loop. The
+    /// renderer reads this to draw a brief overlay flash.
+    bell_decay: Rc<Cell<u8>>,
+    /// Pending OSC 4/10/11/12 colour queries from the shell. Each entry is
+    /// the named-colour palette index plus the formatter the shell handed us
+    /// to build the reply. The render loop drains these with the term lock
+    /// held, looks up the current colour, calls the formatter, and forwards
+    /// the reply bytes back over the PTY.
+    color_requests: Rc<RefCell<Vec<(usize, ColorReplyFormatter)>>>,
+}
+
+impl Default for WebEventProxy {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WebEventProxy {
@@ -58,7 +89,17 @@ impl WebEventProxy {
         Self {
             clipboard_events: Rc::new(RefCell::new(Vec::new())),
             pty_writes: Rc::new(RefCell::new(Vec::new())),
+            title: Rc::new(RefCell::new(None)),
+            bell_decay: Rc::new(Cell::new(0)),
+            color_requests: Rc::new(RefCell::new(Vec::new())),
         }
+    }
+
+    /// Drain pending colour query requests. Returned tuples are
+    /// `(named_color_index, formatter)` — callers should look up the colour
+    /// and invoke the formatter to build the OSC reply.
+    pub fn drain_color_requests(&self) -> Vec<(usize, ColorReplyFormatter)> {
+        self.color_requests.borrow_mut().drain(..).collect()
     }
 
     /// Drain pending clipboard events.
@@ -70,6 +111,34 @@ impl WebEventProxy {
     pub fn drain_pty_writes(&self) -> Vec<String> {
         self.pty_writes.borrow_mut().drain(..).collect()
     }
+
+    /// Latest OSC 0/2 title, or `None` if the shell never set one.
+    pub fn title(&self) -> Option<String> {
+        self.title.borrow().clone()
+    }
+
+    /// Bell intensity in `[0.0, 1.0]`. The render loop should call this
+    /// per frame, draw an overlay at the returned intensity, then call
+    /// `decay_bell()` once to advance the counter.
+    pub fn bell_intensity(&self) -> f32 {
+        self.bell_decay.get() as f32 / BELL_DECAY_MAX as f32
+    }
+
+    /// Step the bell decay counter towards zero. Called once per rendered
+    /// frame; pairs with `bell_intensity()`.
+    pub fn decay_bell(&self) {
+        let v = self.bell_decay.get();
+        if v > 0 {
+            self.bell_decay.set(v - 1);
+        }
+    }
+
+    /// Whether the bell is currently still decaying — JS uses this to decide
+    /// whether to keep marking the terminal dirty across frames so the fade
+    /// actually animates instead of stopping after one paint.
+    pub fn bell_active(&self) -> bool {
+        self.bell_decay.get() > 0
+    }
 }
 
 impl EventListener for WebEventProxy {
@@ -79,10 +148,15 @@ impl EventListener for WebEventProxy {
                 // Terminal content changed, schedule a redraw.
             },
             Event::Title(title) => {
-                log::info!("Terminal title: {title}");
+                log::debug!("Terminal title: {title}");
+                *self.title.borrow_mut() = Some(title);
+            },
+            Event::ResetTitle => {
+                *self.title.borrow_mut() = None;
             },
             Event::Bell => {
                 log::debug!("Terminal bell");
+                self.bell_decay.set(BELL_DECAY_MAX);
             },
             Event::ClipboardStore(_ty, text) => {
                 log::debug!("ClipboardStore: {} bytes", text.len());
@@ -111,6 +185,9 @@ impl EventListener for WebEventProxy {
             },
             Event::PtyWrite(text) => {
                 self.pty_writes.borrow_mut().push(text);
+            },
+            Event::ColorRequest(index, formatter) => {
+                self.color_requests.borrow_mut().push((index, formatter));
             },
             _ => {},
         }
@@ -228,6 +305,18 @@ impl WebTerminal {
         term.selection = Some(Selection::new(SelectionType::Simple, point, side));
     }
 
+    /// Start a block (rectangular) selection at the given viewport cell.
+    /// Matches native Alacritty's Ctrl+Alt+drag behaviour — selects a
+    /// rectangle of cells rather than a wrap-aware line range.
+    pub fn selection_start_block(&mut self, viewport_row: i32, column: usize, side_left: bool) {
+        let mut term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line_index = viewport_row - display_offset;
+        let point = Point::new(Line(line_index), Column(column));
+        let side = if side_left { Side::Left } else { Side::Right };
+        term.selection = Some(Selection::new(SelectionType::Block, point, side));
+    }
+
     /// Extend the active selection to the given viewport cell.
     pub fn selection_update(&mut self, viewport_row: i32, column: usize, side_left: bool) {
         let mut term = self.term.lock();
@@ -270,6 +359,30 @@ impl WebTerminal {
         }
     }
 
+    /// Return the OSC 8 hyperlink URI of the cell at the given viewport
+    /// position, or `None` if the cell carries no link. `viewport_row` is
+    /// 0..screen_lines (top of viewport). Returned String is the raw URI as
+    /// the shell pushed it — callers should treat untrusted, validate with
+    /// `URL` before navigating.
+    pub fn hyperlink_at(&self, viewport_row: i32, column: usize) -> Option<String> {
+        let term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line_index = viewport_row - display_offset;
+        let screen_lines = term.screen_lines() as i32;
+        // Clamp to visible viewport plus scrollback. The point translation
+        // handles negative lines (scrollback) — display_iter would yield
+        // them — but we don't want to construct points outside the grid.
+        if line_index < -(term.grid().history_size() as i32) || line_index >= screen_lines {
+            return None;
+        }
+        let cols = term.columns();
+        if column >= cols {
+            return None;
+        }
+        let point = Point::new(Line(line_index), Column(column));
+        term.grid()[point].hyperlink().map(|h| h.uri().to_string())
+    }
+
     /// Whether the terminal is currently in bracketed-paste mode.
     pub fn bracketed_paste(&self) -> bool {
         let term = self.term.lock();
@@ -290,6 +403,35 @@ impl WebTerminal {
         if m.contains(TermMode::MOUSE_DRAG)         { bits |= 2; }
         if m.contains(TermMode::MOUSE_MOTION)       { bits |= 4; }
         if m.contains(TermMode::SGR_MOUSE)          { bits |= 8; }
+        bits
+    }
+
+    /// Current cursor line as it sits in the grid (signed; negative values
+    /// would only appear if vi-mode scrolls the cursor into history, which
+    /// we don't support yet — but the signed type matches `Point::line`).
+    pub fn cursor_row(&self) -> i32 {
+        let term = self.term.lock();
+        term.grid().cursor.point.line.0
+    }
+
+    /// Current cursor column (zero-based).
+    pub fn cursor_col(&self) -> u32 {
+        let term = self.term.lock();
+        term.grid().cursor.point.column.0 as u32
+    }
+
+    /// Packed keyboard-relevant mode flags. JS reads this once per keystroke
+    /// instead of making three wasm calls.
+    /// Bit 0 = APP_CURSOR (DECCKM, `\e[?1h`) — arrow keys send `\eOA` instead of `\e[A`
+    /// Bit 1 = APP_KEYPAD (DECPAM)
+    /// Bit 2 = FOCUS_IN_OUT (DECSET 1004) — host should send `\e[I` / `\e[O` on focus changes
+    pub fn keyboard_mode_bits(&self) -> u32 {
+        let term = self.term.lock();
+        let m = term.mode();
+        let mut bits = 0u32;
+        if m.contains(TermMode::APP_CURSOR)   { bits |= 1; }
+        if m.contains(TermMode::APP_KEYPAD)   { bits |= 2; }
+        if m.contains(TermMode::FOCUS_IN_OUT) { bits |= 4; }
         bits
     }
 }
