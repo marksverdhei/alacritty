@@ -46,6 +46,13 @@ pub struct Args {
     /// with no Origin header (same-origin) are accepted.
     #[arg(long = "allowed-origin")]
     allowed_origins: Vec<String>,
+
+    /// Per-IP rate-limit ceiling: maximum new connections allowed within the
+    /// rate-limit window (10s). The default of 5 fits human use; the
+    /// Playwright suite needs a higher value because every test that loads
+    /// /compare opens a fresh WebSocket. Set to 0 to disable rate limiting.
+    #[arg(long, default_value_t = 5)]
+    rate_limit_max: usize,
 }
 
 impl Args {
@@ -58,20 +65,25 @@ impl Args {
 }
 
 /// Per-IP connection timestamps for rate limiting.
-/// Max 5 connections per 10 seconds from the same IP.
+/// Limit is configurable via `--rate-limit-max`; 0 disables.
 struct RateLimiter {
     connections: HashMap<IpAddr, Vec<Instant>>,
+    max_per_window: usize,
 }
 
 impl RateLimiter {
-    fn new() -> Self {
+    fn new(max_per_window: usize) -> Self {
         Self {
             connections: HashMap::new(),
+            max_per_window,
         }
     }
 
     /// Returns true if the connection should be allowed.
     fn check_and_record(&mut self, ip: IpAddr) -> bool {
+        if self.max_per_window == 0 {
+            return true;
+        }
         let now = Instant::now();
         let window = std::time::Duration::from_secs(10);
 
@@ -80,7 +92,7 @@ impl RateLimiter {
         // Remove entries older than the window.
         timestamps.retain(|t| now.duration_since(*t) < window);
 
-        if timestamps.len() >= 5 {
+        if timestamps.len() >= self.max_per_window {
             return false;
         }
 
@@ -135,7 +147,7 @@ async fn main() {
     );
 
     let active_sessions = Arc::new(AtomicUsize::new(0));
-    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new()));
+    let rate_limiter = Arc::new(Mutex::new(RateLimiter::new(args.rate_limit_max)));
 
     loop {
         match listener.accept().await {
