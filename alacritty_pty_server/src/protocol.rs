@@ -79,3 +79,109 @@ pub fn encode_exit(exit_code: Option<u8>) -> Vec<u8> {
         None => vec![MSG_EXIT],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_input_returns_none() {
+        assert!(parse_client_message(&[]).is_none());
+    }
+
+    #[test]
+    fn unknown_tag_returns_none() {
+        assert!(parse_client_message(&[0xff, 1, 2, 3]).is_none());
+    }
+
+    #[test]
+    fn data_message_extracts_payload() {
+        let msg = parse_client_message(&[MSG_DATA, b'h', b'i']);
+        match msg {
+            Some(ClientMessage::Data(bytes)) => assert_eq!(bytes, b"hi"),
+            _ => panic!("expected Data, got {:?}", msg),
+        }
+    }
+
+    #[test]
+    fn data_message_with_only_tag_yields_empty_payload() {
+        // A `[MSG_DATA]`-only message (no payload bytes) is valid — represents
+        // an "empty input chunk". Used by the server's heartbeat / poke path.
+        match parse_client_message(&[MSG_DATA]) {
+            Some(ClientMessage::Data(bytes)) => assert!(bytes.is_empty()),
+            other => panic!("expected empty Data, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn resize_message_decodes_little_endian_u16() {
+        let mut bytes = vec![MSG_RESIZE];
+        bytes.extend_from_slice(&80u16.to_le_bytes());
+        bytes.extend_from_slice(&24u16.to_le_bytes());
+        bytes.extend_from_slice(&8u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        match parse_client_message(&bytes) {
+            Some(ClientMessage::Resize { cols, rows, cell_w, cell_h }) => {
+                assert_eq!((cols, rows, cell_w, cell_h), (80, 24, 8, 16));
+            },
+            other => panic!("expected Resize, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn resize_message_too_short_returns_none() {
+        // Tag + only 6 bytes — needs 8 for the four u16s.
+        let bytes = vec![MSG_RESIZE, 0, 0, 0, 0, 0, 0];
+        assert!(parse_client_message(&bytes).is_none());
+    }
+
+    #[test]
+    fn resize_clamps_oversized_cols_rows() {
+        // Anti-abuse clamp: cols → 1..=500, rows → 1..=200.
+        let mut bytes = vec![MSG_RESIZE];
+        bytes.extend_from_slice(&9999u16.to_le_bytes()); // cols
+        bytes.extend_from_slice(&9999u16.to_le_bytes()); // rows
+        bytes.extend_from_slice(&8u16.to_le_bytes()); // cell_w
+        bytes.extend_from_slice(&16u16.to_le_bytes()); // cell_h
+        match parse_client_message(&bytes) {
+            Some(ClientMessage::Resize { cols, rows, .. }) => {
+                assert_eq!(cols, 500, "cols must clamp to 500");
+                assert_eq!(rows, 200, "rows must clamp to 200");
+            },
+            other => panic!("expected Resize, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn resize_clamps_zero_cols_rows_up() {
+        // 0 → 1 (clamp lower bound).
+        let mut bytes = vec![MSG_RESIZE];
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&8u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        match parse_client_message(&bytes) {
+            Some(ClientMessage::Resize { cols, rows, .. }) => {
+                assert_eq!(cols, 1);
+                assert_eq!(rows, 1);
+            },
+            other => panic!("expected Resize, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn encode_data_prepends_msg_tag() {
+        assert_eq!(encode_data(b"abc"), vec![MSG_DATA, b'a', b'b', b'c']);
+        assert_eq!(encode_data(&[]), vec![MSG_DATA]);
+    }
+
+    #[test]
+    fn encode_exit_with_code() {
+        assert_eq!(encode_exit(Some(42)), vec![MSG_EXIT, 42]);
+    }
+
+    #[test]
+    fn encode_exit_without_code() {
+        assert_eq!(encode_exit(None), vec![MSG_EXIT]);
+    }
+}
