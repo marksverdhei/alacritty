@@ -76,3 +76,64 @@ jobs:
       - name: Run WASM tests
         run: wasm-pack test --node
         working-directory: alacritty_terminal
+
+  alacritty-web-tests:
+    name: alacritty_web Rust tests (native)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: cargo test alacritty_web
+        run: cargo test -p alacritty_web --tests
+
+  alacritty-web-clippy:
+    name: alacritty_web clippy (wasm32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+          components: clippy
+      - name: cargo clippy alacritty_web
+        # -D warnings catches the same regressions that have silently slipped
+        # through `cargo check` (which only emits warnings, not errors).
+        run: cargo clippy -p alacritty_web --target wasm32-unknown-unknown -- -D warnings
+
+  demo-playwright:
+    name: Demo Playwright tests (real PTY)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: wasm-pack build alacritty_web
+        run: wasm-pack build --target web --release --out-dir ../demo/static/pkg
+        working-directory: alacritty_web
+      - name: Build PTY server
+        # Pre-built so the `pretest` script in demo/package.json finds it
+        # without re-invoking cargo from inside the Playwright webServer.
+        run: cargo build --release -p alacritty_pty_server
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: npm ci
+        run: npm ci
+        working-directory: demo
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: demo
+      - name: Run Playwright tests
+        run: npm test
+        working-directory: demo
+      - name: Upload trace artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: demo/test-results/
+          if-no-files-found: ignore
