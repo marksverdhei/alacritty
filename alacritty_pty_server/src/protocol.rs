@@ -1,9 +1,9 @@
-/// Binary protocol message types for WebSocket PTY communication.
-///
-/// Wire format:
-/// - `0x00` + bytes           = PTY data (bidirectional)
-/// - `0x01` + 4x u16 LE      = resize (client -> server): cols, rows, cell_w, cell_h
-/// - `0x02` + optional u8     = child exited (server -> client), with optional exit code
+//! Binary protocol message types for WebSocket PTY communication.
+//!
+//! Wire format:
+//! - `0x00` + bytes           = PTY data (bidirectional)
+//! - `0x01` + 4x u16 LE      = resize (client -> server): cols, rows, cell_w, cell_h
+//! - `0x02` + optional u8     = child exited (server -> client), with optional exit code
 
 use log::warn;
 

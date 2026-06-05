@@ -6,6 +6,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
+    "build-pty": "cd .. && cargo build --release -p alacritty_pty_server",
+    "pretest": "npm run build-pty",
     "test": "playwright test",
     "test:ui": "playwright test --ui"
   },
