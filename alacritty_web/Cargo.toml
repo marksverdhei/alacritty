@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Alacritty Contributors"]
 license = "Apache-2.0"
 description = "WASM/WebGPU terminal renderer based on Alacritty"
+repository = "https://github.com/alacritty/alacritty"
 edition.workspace = true
 rust-version.workspace = true
 
