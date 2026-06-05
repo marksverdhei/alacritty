@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alacritty WebView POC</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #1d1f21; color: #c5c8c6;
+    font-family: ui-monospace, monospace; height: 100%; overscroll-behavior: none; }
+  #term { width: 100vw; height: 100vh; display: block; outline: none;
+    touch-action: none; }
+  #status { position: fixed; top: 4px; left: 8px; font-size: 11px;
+    color: #969896; pointer-events: none; user-select: none; }
+</style>
+</head>
+<body>
+<canvas id="term"></canvas>
+<div id="status">loading…</div>
+<script type="module">
+  import { attachTerminal } from './terminal.js';
+
+  const statusEl = document.getElementById('status');
+  const canvas = document.getElementById('term');
+
+  try {
+    statusEl.textContent = 'initializing wasm…';
+    const { terminal, hostConnected, focus } = await attachTerminal(canvas);
+    focus();
+
+    if (hostConnected) {
+      // Ask the Android host where the bundled pty server is listening,
+      // then point the wasm bundle's built-in WebSocket client at it.
+      statusEl.textContent = 'asking host for pty server…';
+      const wsUrl = window.AlacrittyHost.wsUrl();
+      if (wsUrl) {
+        statusEl.textContent = 'connecting to ' + wsUrl + '…';
+        terminal.connect(wsUrl);
+        // Poll readyState briefly so the status reflects reality.
+        const start = Date.now();
+        const tick = () => {
+          const rs = terminal.ws_ready_state();
+          if (rs === 1) { statusEl.textContent = 'connected'; return; }
+          if (rs === 2 || rs === 3) { statusEl.textContent = 'disconnected'; return; }
+          if (Date.now() - start < 5000) requestAnimationFrame(tick);
+          else statusEl.textContent = 'connection timeout';
+        };
+        tick();
+      } else {
+        statusEl.textContent = 'host returned no ws url';
+      }
+    } else {
+      statusEl.textContent = 'ready — no host bridge (local echo mode)';
+      terminal.feed(new TextEncoder().encode(
+        'alacritty webview poc — local echo mode\r\n' +
+        'type to feed bytes through the wasm parser; arrows / Ctrl-keys all work\r\n' +
+        '$ '
+      ));
+    }
+  } catch (e) {
+    statusEl.textContent = 'init failed: ' + (e?.message || e);
+    console.error(e);
+  }
+</script>
+</body>
+</html>
