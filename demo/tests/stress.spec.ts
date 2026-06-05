@@ -548,6 +548,82 @@ test.describe('alacritty wasm stress benchmark', () => {
 		expect(decoded2).toEqual(['pasted!']);
 	});
 
+	test('WASM linear memory stays bounded under sustained feed', async ({ page }) => {
+		// Per #28 acceptance: "monitor WASM linear memory growth during
+		// sustained usage". A true leak (e.g. keeping every fed buffer
+		// reachable) would show as unbounded growth that scales with feed
+		// size; a proper scrollback ring buffer + reused scratch buffers
+		// reach a steady state.
+		//
+		// Strategy: warm with one 10 MB feed so peak working set
+		// allocations land. The wasm heap is monotonic (never shrinks
+		// within a session), so the first feed inflates the heap to its
+		// working-set peak. Then measure delta over a SECOND identical
+		// feed — that's the steady-state growth, which should be ~0 if
+		// nothing leaks. Assert <2 MB to leave headroom for legitimate
+		// page-aligned growth.
+		await page.goto('/compare');
+		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
+			timeout: 15_000,
+		});
+
+		const result = await page.evaluate(async () => {
+			const a = (window as any).__cmp.alacritty;
+			const w = await (window as any).__alacrittyWasmInit;
+			const mem: WebAssembly.Memory = w.memory;
+
+			// Pre-compute 10 MB of printable ASCII; reuse across both passes.
+			const chunk = new Uint8Array(1024);
+			let seed = 1;
+			for (let i = 0; i < chunk.length; i++) {
+				seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+				chunk[i] = 0x20 + (seed % 95);
+			}
+			const totalBytes = 10 * 1024 * 1024;
+
+			const feedOnce = async () => {
+				for (let off = 0; off < totalBytes; off += chunk.length) {
+					a.feed(chunk);
+					if ((off & 0xffff) === 0) {
+						await new Promise((r) => requestAnimationFrame(() => r(null)));
+					}
+				}
+				for (let i = 0; i < 30; i++) {
+					await new Promise((r) => requestAnimationFrame(() => r(null)));
+				}
+			};
+
+			// Warmup: get the heap to its working-set peak.
+			for (let i = 0; i < 20; i++) {
+				await new Promise((r) => requestAnimationFrame(() => r(null)));
+			}
+			await feedOnce();
+			const afterWarmup = mem.buffer.byteLength;
+
+			// Steady-state pass.
+			await feedOnce();
+			const afterSecond = mem.buffer.byteLength;
+
+			return {
+				warmupMb: afterWarmup / 1024 / 1024,
+				steadyMb: afterSecond / 1024 / 1024,
+				steadyDeltaMb: (afterSecond - afterWarmup) / 1024 / 1024,
+				fedMb: totalBytes / 1024 / 1024,
+			};
+		});
+
+		console.log(
+			`memory: warmup-peak=${result.warmupMb.toFixed(2)}MB after-second-feed=${result.steadyMb.toFixed(2)}MB steady-delta=${result.steadyDeltaMb.toFixed(2)}MB (fed ${result.fedMb.toFixed(0)}MB each pass)`,
+		);
+
+		// Steady-state delta: the second 10 MB feed should not grow the
+		// heap meaningfully. >2 MB suggests a leak that scales with feed.
+		expect(
+			result.steadyDeltaMb,
+			'wasm heap growth on second sustained feed (steady-state)',
+		).toBeLessThan(2);
+	});
+
 	test('input latency floor — single-byte feed renders inside a frame budget', async ({
 		page,
 	}) => {
