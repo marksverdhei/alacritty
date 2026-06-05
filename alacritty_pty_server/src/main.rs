@@ -64,28 +64,97 @@ struct RateLimiter {
 }
 
 impl RateLimiter {
+    const WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+    const MAX_PER_WINDOW: usize = 5;
+
     fn new() -> Self {
-        Self {
-            connections: HashMap::new(),
-        }
+        Self { connections: HashMap::new() }
     }
 
-    /// Returns true if the connection should be allowed.
+    /// Returns true if the connection should be allowed. Also evicts entries
+    /// for IPs that have gone quiet — without this, a flood from many one-off
+    /// IPs would grow `connections` unboundedly.
     fn check_and_record(&mut self, ip: IpAddr) -> bool {
-        let now = Instant::now();
-        let window = std::time::Duration::from_secs(10);
+        self.check_and_record_at(ip, Instant::now())
+    }
+
+    /// Testable seam — same as `check_and_record` but with an injected `now`.
+    fn check_and_record_at(&mut self, ip: IpAddr, now: Instant) -> bool {
+        // Sweep every call: drop any IP whose newest timestamp is outside
+        // the window. Cost is O(n) in unique IPs since startup; for a single
+        // user this stays in the single digits.
+        self.connections.retain(|_, ts| {
+            ts.retain(|t| now.duration_since(*t) < Self::WINDOW);
+            !ts.is_empty()
+        });
 
         let timestamps = self.connections.entry(ip).or_default();
-
-        // Remove entries older than the window.
-        timestamps.retain(|t| now.duration_since(*t) < window);
-
-        if timestamps.len() >= 5 {
+        if timestamps.len() >= Self::MAX_PER_WINDOW {
             return false;
         }
-
         timestamps.push(now);
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn allows_up_to_max_in_window() {
+        let mut rl = RateLimiter::new();
+        let t0 = Instant::now();
+        for _ in 0..RateLimiter::MAX_PER_WINDOW {
+            assert!(rl.check_and_record_at(ip("1.2.3.4"), t0));
+        }
+        // 6th attempt within the window is rejected.
+        assert!(!rl.check_and_record_at(ip("1.2.3.4"), t0));
+    }
+
+    #[test]
+    fn separate_ips_have_separate_budgets() {
+        let mut rl = RateLimiter::new();
+        let t0 = Instant::now();
+        for _ in 0..RateLimiter::MAX_PER_WINDOW {
+            assert!(rl.check_and_record_at(ip("10.0.0.1"), t0));
+        }
+        // Different IP still has its full budget.
+        assert!(rl.check_and_record_at(ip("10.0.0.2"), t0));
+    }
+
+    #[test]
+    fn window_rolls_off() {
+        let mut rl = RateLimiter::new();
+        let t0 = Instant::now();
+        for _ in 0..RateLimiter::MAX_PER_WINDOW {
+            assert!(rl.check_and_record_at(ip("1.2.3.4"), t0));
+        }
+        assert!(!rl.check_and_record_at(ip("1.2.3.4"), t0));
+        // After the window passes, the budget is full again.
+        let later = t0 + RateLimiter::WINDOW + std::time::Duration::from_secs(1);
+        assert!(rl.check_and_record_at(ip("1.2.3.4"), later));
+    }
+
+    #[test]
+    fn quiet_ips_are_evicted_to_bound_memory() {
+        // Regression test: HashMap<IpAddr, _> used to grow unboundedly because
+        // entries for one-off IPs were never removed. Now the sweep evicts them.
+        let mut rl = RateLimiter::new();
+        let t0 = Instant::now();
+        rl.check_and_record_at(ip("1.2.3.4"), t0);
+        rl.check_and_record_at(ip("1.2.3.5"), t0);
+        rl.check_and_record_at(ip("1.2.3.6"), t0);
+        assert_eq!(rl.connections.len(), 3);
+
+        // After the window, a probe from a different IP evicts the stale ones.
+        let later = t0 + RateLimiter::WINDOW + std::time::Duration::from_secs(1);
+        rl.check_and_record_at(ip("9.9.9.9"), later);
+        assert_eq!(rl.connections.len(), 1, "stale entries should be evicted");
     }
 }
 
