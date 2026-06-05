@@ -186,6 +186,80 @@ test.describe('alacritty wasm + real bash PTY', () => {
 		expect(opens[0].features).toContain('noopener');
 	});
 
+	test('reconnect lifecycle — sequential WS sessions both work', async ({ page }) => {
+		// Per #26 acceptance: "Connection lifecycle (connect, interact,
+		// disconnect, reconnect)". The disconnect/reconnect path was the
+		// remaining gap. Opens two sequential WebSocket sessions against
+		// the pty server, runs a unique command in each, asserts both
+		// responses came back. Verifies the server cleans up after a closed
+		// session and accepts a fresh one with the same client identity.
+		await page.goto('/compare'); // any page, just need a JS context
+		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
+			timeout: 15_000,
+		});
+
+		const result = await page.evaluate(async () => {
+			// Close the existing /compare WS so we don't pollute the
+			// rate-limit or the server's session count.
+			const cmp = (window as any).__cmp;
+			try { cmp.ws.close(); } catch {}
+			await new Promise((r) => setTimeout(r, 300));
+
+			const runCycle = async (sentinel: string): Promise<string | null> => {
+				const ws = new WebSocket('ws://localhost:7681');
+				ws.binaryType = 'arraybuffer';
+				await new Promise<void>((resolve, reject) => {
+					ws.onopen = () => resolve();
+					ws.onerror = () => reject(new Error('open failed'));
+					setTimeout(() => reject(new Error('open timeout')), 5000);
+				});
+
+				const responses: string[] = [];
+				ws.onmessage = (ev) => {
+					if (!(ev.data instanceof ArrayBuffer)) return;
+					const bytes = new Uint8Array(ev.data);
+					if (bytes[0] === 0x00) {
+						responses.push(new TextDecoder().decode(bytes.slice(1)));
+					}
+				};
+
+				// Send `echo SENTINEL\n` as a MSG_DATA frame.
+				const cmd = `echo ${sentinel}\n`;
+				const payload = new TextEncoder().encode(cmd);
+				const framed = new Uint8Array(1 + payload.length);
+				framed[0] = 0x00;
+				framed.set(payload, 1);
+				ws.send(framed);
+
+				// Wait for the sentinel echo to appear.
+				const deadline = performance.now() + 5000;
+				let found: string | null = null;
+				while (performance.now() < deadline) {
+					await new Promise((r) => setTimeout(r, 100));
+					const combined = responses.join('');
+					if (combined.includes(sentinel)) {
+						found = sentinel;
+						break;
+					}
+				}
+
+				// Clean close.
+				ws.close();
+				await new Promise((r) => setTimeout(r, 100));
+				return found;
+			};
+
+			const cycle1 = await runCycle('RECONNECT_CYCLE_ONE');
+			// Small gap between sessions so server reaper finishes.
+			await new Promise((r) => setTimeout(r, 300));
+			const cycle2 = await runCycle('RECONNECT_CYCLE_TWO');
+			return { cycle1, cycle2 };
+		});
+
+		expect(result.cycle1, 'first WS session should echo sentinel').toBe('RECONNECT_CYCLE_ONE');
+		expect(result.cycle2, 'second WS session should echo sentinel').toBe('RECONNECT_CYCLE_TWO');
+	});
+
 	test('MSG_RESIZE actually resizes the server-side PTY', async ({ page }) => {
 		// Per #26 acceptance: "Client resize messages result in correct PTY
 		// dimensions". Send a binary MSG_RESIZE frame with known dimensions,
