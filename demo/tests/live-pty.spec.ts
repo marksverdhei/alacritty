@@ -186,6 +186,84 @@ test.describe('alacritty wasm + real bash PTY', () => {
 		expect(opens[0].features).toContain('noopener');
 	});
 
+	test('MSG_RESIZE actually resizes the server-side PTY', async ({ page }) => {
+		// Per #26 acceptance: "Client resize messages result in correct PTY
+		// dimensions". Send a binary MSG_RESIZE frame with known dimensions,
+		// then ask bash for its terminal size via `stty size`, parse the
+		// response, assert it matches.
+		await page.goto('/compare');
+		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
+			timeout: 15_000,
+		});
+		await page.waitForFunction(
+			() => (window as any).__cmp?.ws?.readyState === 1,
+			null,
+			{ timeout: 10_000 },
+		);
+		await page.waitForTimeout(500);
+
+		const got = await page.evaluate(async () => {
+			const cmp = (window as any).__cmp;
+			// Chosen so the dimensions don't match any default (server picks
+			// 80x24; /compare's auto-syncSize sets ~69x30) — the test would
+			// pass trivially otherwise.
+			const TARGET_COLS = 113;
+			const TARGET_ROWS = 37;
+
+			// Build [MSG_RESIZE, cols_lo, cols_hi, rows_lo, rows_hi, 0,0,0,0].
+			const frame = new ArrayBuffer(9);
+			const view = new DataView(frame);
+			view.setUint8(0, 0x01); // MSG_RESIZE
+			view.setUint16(1, TARGET_COLS, true);
+			view.setUint16(3, TARGET_ROWS, true);
+			view.setUint16(5, 0, true);
+			view.setUint16(7, 0, true);
+
+			// Spy on DATA frames (0x00) for `stty size` output.
+			const responses: string[] = [];
+			const handler = (ev: MessageEvent) => {
+				const bytes =
+					ev.data instanceof ArrayBuffer
+						? new Uint8Array(ev.data)
+						: null;
+				if (!bytes || bytes.length < 2 || bytes[0] !== 0x00) return;
+				responses.push(new TextDecoder().decode(bytes.slice(1)));
+			};
+			cmp.ws.addEventListener('message', handler);
+
+			// Send the resize frame, then a tiny script that prints just the
+			// size with a unique sentinel so we can pick it out of any
+			// prompt redraw noise that follows.
+			cmp.ws.send(frame);
+			// Give the kernel a moment to apply SIGWINCH and bash to see it.
+			await new Promise((r) => setTimeout(r, 200));
+			cmp.sendInput(
+				new TextEncoder().encode(
+					'printf "RZ=%dx%d\\n" "$(tput lines)" "$(tput cols)"\r',
+				),
+			);
+
+			// Wait up to 5s for the sentinel in the concatenated DATA stream.
+			const sentinelRe = /RZ=(\d+)x(\d+)/;
+			const deadline = performance.now() + 5000;
+			while (performance.now() < deadline) {
+				await new Promise((r) => setTimeout(r, 100));
+				const combined = responses.join('');
+				const m = combined.match(sentinelRe);
+				if (m) {
+					cmp.ws.removeEventListener('message', handler);
+					return { rows: Number(m[1]), cols: Number(m[2]), target: { cols: TARGET_COLS, rows: TARGET_ROWS } };
+				}
+			}
+			cmp.ws.removeEventListener('message', handler);
+			return null;
+		});
+
+		expect(got, 'stty size sentinel should appear within 5s').not.toBeNull();
+		expect(got!.cols, 'PTY columns').toBe(got!.target.cols);
+		expect(got!.rows, 'PTY rows').toBe(got!.target.rows);
+	});
+
 	test('server emits MSG_EXIT (0x02) when bash exits', async ({ page }) => {
 		// Per #26 acceptance: "Handle server-side PTY exit gracefully".
 		// The server emits a single binary frame `[0x02]` or `[0x02, code]`
