@@ -1,0 +1,20 @@
+{
+  "name": "alacritty_web",
+  "type": "module",
+  "collaborators": [
+    "Alacritty Contributors"
+  ],
+  "description": "WASM/WebGPU terminal renderer based on Alacritty",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "files": [
+    "alacritty_web_bg.wasm",
+    "alacritty_web.js",
+    "alacritty_web.d.ts"
+  ],
+  "main": "alacritty_web.js",
+  "types": "alacritty_web.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
