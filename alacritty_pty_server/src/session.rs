@@ -18,6 +18,9 @@ use crate::protocol::{self, ClientMessage};
 
 /// Handle a single TCP connection: upgrade to WebSocket, optionally authenticate,
 /// spawn a PTY, and bridge I/O.
+// The `accept_hdr_async` callback returns Result<Response, ErrorResponse>;
+// ErrorResponse is tokio-tungstenite's type and we can't shrink it.
+#[allow(clippy::result_large_err)]
 pub async fn handle_connection(
     stream: tokio::net::TcpStream,
     peer: SocketAddr,
