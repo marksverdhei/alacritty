@@ -35,7 +35,7 @@ fn term_new_on_wasm32() {
 fn vte_parser_basic_escape_sequences() {
     let size = TermSize::new(80, 24);
     let mut term = Term::new(Config::default(), &size, Mock);
-    let mut parser = ansi::Processor::new();
+    let mut parser: ansi::Processor = ansi::Processor::new();
 
     // Feed "Hello" through the VTE parser.
     let input = b"Hello";
@@ -51,7 +51,7 @@ fn vte_parser_basic_escape_sequences() {
 fn vte_parser_csi_cursor_movement() {
     let size = TermSize::new(80, 24);
     let mut term = Term::new(Config::default(), &size, Mock);
-    let mut parser = ansi::Processor::new();
+    let mut parser: ansi::Processor = ansi::Processor::new();
 
     // Write text, then use CSI sequence to move cursor to position (1,1).
     // ESC [ H moves cursor to home (0,0 in 0-indexed).
@@ -106,7 +106,7 @@ fn terminal_resize() {
 fn vte_parser_newline_handling() {
     let size = TermSize::new(80, 24);
     let mut term = Term::new(Config::default(), &size, Mock);
-    let mut parser = ansi::Processor::new();
+    let mut parser: ansi::Processor = ansi::Processor::new();
 
     // Write text with newlines (LF moves cursor down, CR returns to column 0).
     let input = b"Line1\r\nLine2";
@@ -121,7 +121,7 @@ fn vte_parser_newline_handling() {
 fn terminal_clear_screen() {
     let size = TermSize::new(80, 24);
     let mut term = Term::new(Config::default(), &size, Mock);
-    let mut parser = ansi::Processor::new();
+    let mut parser: ansi::Processor = ansi::Processor::new();
 
     // Write some text then clear screen (CSI 2 J) and go home (CSI H).
     let input = b"Hello World\x1b[2J\x1b[H";
