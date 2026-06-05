@@ -186,6 +186,58 @@ test.describe('alacritty wasm + real bash PTY', () => {
 		expect(opens[0].features).toContain('noopener');
 	});
 
+	test('server emits MSG_EXIT (0x02) when bash exits', async ({ page }) => {
+		// Per #26 acceptance: "Handle server-side PTY exit gracefully".
+		// The server emits a single binary frame `[0x02]` or `[0x02, code]`
+		// when the child process terminates. The compare page's WS is the
+		// observation point — install a message spy before triggering exit.
+		await page.goto('/compare');
+		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
+			timeout: 15_000,
+		});
+		await page.waitForFunction(
+			() => (window as any).__cmp?.ws?.readyState === 1,
+			null,
+			{ timeout: 10_000 },
+		);
+		await page.waitForTimeout(500);
+
+		const exitFrame = await page.evaluate(async () => {
+			const cmp = (window as any).__cmp;
+			// /compare sets ws.binaryType = 'arraybuffer', so binary frames
+			// arrive as ArrayBuffer not Blob.
+			let resolved: number[] | null = null;
+			const done = new Promise<number[] | null>((resolve) => {
+				const handler = (ev: MessageEvent) => {
+					let bytes: Uint8Array | null = null;
+					if (ev.data instanceof ArrayBuffer) bytes = new Uint8Array(ev.data);
+					else if (ev.data instanceof Uint8Array) bytes = ev.data;
+					if (bytes && bytes.length >= 1 && bytes[0] === 0x02 && !resolved) {
+						resolved = Array.from(bytes);
+						cmp.ws.removeEventListener('message', handler);
+						resolve(resolved);
+					}
+				};
+				cmp.ws.addEventListener('message', handler);
+				setTimeout(() => resolve(null), 5000);
+			});
+
+			cmp.sendInput(new TextEncoder().encode('exit\n'));
+			return done;
+		});
+
+		expect(exitFrame, 'server should emit a MSG_EXIT frame').not.toBeNull();
+		expect(exitFrame![0]).toBe(0x02);
+		// Length: tag only (1) or tag + exit code (2).
+		expect(exitFrame!.length).toBeGreaterThanOrEqual(1);
+		expect(exitFrame!.length).toBeLessThanOrEqual(2);
+		if (exitFrame!.length === 2) {
+			// Bash's `exit` with no arg propagates the previous command's
+			// exit status; on a fresh shell that's 0.
+			expect(exitFrame![1]).toBeLessThanOrEqual(2);
+		}
+	});
+
 	test('DECSET 1004 makes focus/blur emit ESC[I / ESC[O on /compare', async ({
 		page,
 	}) => {
