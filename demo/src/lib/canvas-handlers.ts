@@ -32,6 +32,7 @@ export interface TerminalHandle {
 	report_mouse?: (button: number, action: number, col: number, row: number, mods: number) => Uint8Array | null | undefined;
 	keyboard_mode_bits?: () => number;
 	hyperlink_at?: (row: number, col: number) => string | null | undefined;
+	line_text?: (row: number) => string | null | undefined;
 	selection_start: (row: number, col: number, sideLeft: boolean) => void;
 	selection_start_block: (row: number, col: number, sideLeft: boolean) => void;
 	selection_update: (row: number, col: number, sideLeft: boolean) => void;
@@ -60,6 +61,33 @@ export interface WireOpts {
 const DEFAULT_URL_ALLOWLIST = /^(https?|file|mailto):/i;
 
 /**
+ * Find a URL on `line` that contains column `col`, or null. Returns the
+ * matched URI string. Intentionally conservative — URL regexes are a
+ * well-known rabbit hole, this matches the obvious cases (http(s)://...,
+ * file://..., mailto:user@host) and stops at any whitespace or common
+ * delimiter that would terminate a URL in shell output (`,`, `)`, `]`,
+ * `}`, `>`, terminal-quoting `'`, `"`). Trailing punctuation that
+ * routinely follows URLs in prose (`.`, `,`, `;`, `:`) is stripped so
+ * "see https://example.com." doesn't include the period.
+ */
+function findUrlAt(line: string | null | undefined, col: number): string | null {
+	if (!line) return null;
+	// `g` flag so we can iterate every match on the line and pick the one
+	// covering `col`. The pattern allows a generous character class but
+	// terminates on whitespace + common shell-output delimiters.
+	const re = /(https?|file|mailto):[^\s,)\]}>'"`]+/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(line)) !== null) {
+		const start = m.index;
+		let end = start + m[0].length;
+		// Strip trailing punctuation that's almost certainly prose, not URL.
+		while (end > start && /[.,;:!?]/.test(line[end - 1]!)) end--;
+		if (col >= start && col < end) return line.slice(start, end);
+	}
+	return null;
+}
+
+/**
  * Wire all non-keyboard canvas event listeners. Returns a cleanup function
  * that removes every listener registered here.
  *
@@ -82,9 +110,15 @@ export function wireTerminalCanvas(
 	const onMouseDown = (e: MouseEvent) => {
 		const c = cellFromMouseEvent(e, canvas, terminal);
 		if (!c) return;
-		// OSC 8: Ctrl/Cmd+left-click opens the link.
+		// Ctrl/Cmd+left-click opens a link at the click cell. First try
+		// OSC 8 (modern shells emit explicit hyperlink markers); if the
+		// cell carries no OSC 8 link, fall back to regex-matching the line
+		// text for a plain URL that contains the click column. Same
+		// allow-list either way so shells can't navigate to `javascript:`.
 		if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
-			const uri = terminal.hyperlink_at?.(c.row, c.col);
+			const uri =
+				terminal.hyperlink_at?.(c.row, c.col) ??
+				findUrlAt(terminal.line_text?.(c.row) ?? null, c.col);
 			if (uri) {
 				e.preventDefault();
 				try {

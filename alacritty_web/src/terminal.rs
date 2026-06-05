@@ -386,6 +386,32 @@ impl WebTerminal {
         term.grid()[point].hyperlink().map(|h| h.uri().to_string())
     }
 
+    /// Concatenated text of the cells on the given viewport row, with
+    /// trailing spaces trimmed. Used by JS to regex-match URLs in plain
+    /// text (e.g. on Ctrl+click) without exposing the full grid API.
+    /// Returns `None` if the row is outside the grid.
+    pub fn line_text(&self, viewport_row: i32) -> Option<String> {
+        let term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line_index = viewport_row - display_offset;
+        let screen_lines = term.screen_lines() as i32;
+        if line_index < -(term.grid().history_size() as i32) || line_index >= screen_lines {
+            return None;
+        }
+        let cols = term.columns();
+        let mut out = String::with_capacity(cols);
+        for col in 0..cols {
+            let point = Point::new(Line(line_index), Column(col));
+            out.push(term.grid()[point].c);
+        }
+        // Trim only trailing whitespace — leading spaces may be meaningful
+        // (indented output, ASCII art) and middle spaces always are.
+        while out.ends_with(' ') {
+            out.pop();
+        }
+        Some(out)
+    }
+
     /// Whether the terminal is currently in bracketed-paste mode.
     pub fn bracketed_paste(&self) -> bool {
         let term = self.term.lock();

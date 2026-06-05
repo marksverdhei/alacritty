@@ -126,6 +126,18 @@ fn bracketed_paste_flag_tracks_decset_2004() {
 }
 
 #[test]
+fn line_text_returns_row_contents_trimmed() {
+    let mut t = WebTerminal::new(40, 4);
+    t.process_bytes(b"see https://example.com here\r\nnext line  ");
+    assert_eq!(t.line_text(0).as_deref(), Some("see https://example.com here"));
+    assert_eq!(t.line_text(1).as_deref(), Some("next line"));
+    // Empty row: returns Some("") not None.
+    assert_eq!(t.line_text(2).as_deref(), Some(""));
+    // Out of bounds: None.
+    assert_eq!(t.line_text(999), None);
+}
+
+#[test]
 fn osc8_hyperlink_lookup_returns_uri() {
     // OSC 8 syntax is `\e]8;params;uri\e\\TEXT\e]8;;\e\\`. The cells holding
     // TEXT should carry the URI; cells outside the link should not.

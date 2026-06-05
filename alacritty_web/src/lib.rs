@@ -586,6 +586,14 @@ impl AlacrittyTerminal {
         app.terminal.hyperlink_at(row, column as usize)
     }
 
+    /// Concatenated text of the cells on the given viewport row, with
+    /// trailing spaces trimmed. JS uses this on Ctrl+click to regex-match
+    /// URLs in plain (non-OSC-8) text.
+    pub fn line_text(&self, row: i32) -> Option<String> {
+        let app = self.state.try_borrow().ok()?;
+        app.terminal.line_text(row)
+    }
+
     /// Latest OSC 0/2 window title the shell pushed, or `None` if never set.
     /// JS typically polls this on a low-frequency interval and mirrors it
     /// into `document.title`. Polling (vs. callbacks) keeps the JS↔WASM

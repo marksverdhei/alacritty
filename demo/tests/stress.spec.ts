@@ -461,6 +461,71 @@ test.describe('alacritty wasm stress benchmark', () => {
 		);
 	});
 
+	test('Ctrl+click on a plain-text URL opens it via window.open', async ({ page }) => {
+		// Complements the OSC 8 test: shells that don't emit OSC 8 still
+		// print URLs as raw text. canvas-handlers.ts's Ctrl+click handler
+		// falls back to regex-matching the line for a URL containing the
+		// click column. Same allow-list as OSC 8 — `javascript:` blocked.
+		await page.goto('/compare');
+		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
+			timeout: 15_000,
+		});
+
+		const geom = await page.evaluate(async () => {
+			const cmp = (window as any).__cmp;
+			const a = cmp.alacritty;
+			// Spy on window.open. Close the existing PTY so bash output
+			// doesn't push our text around, then feed a line with two URLs.
+			try { cmp.ws.close(); } catch {}
+			await new Promise((r) => setTimeout(r, 200));
+			(window as any).__opens = [];
+			window.open = (url?: string | URL) => {
+				(window as any).__opens.push(String(url ?? ''));
+				return null;
+			};
+			a.feed(new TextEncoder().encode(
+				'\x1b[2J\x1b[Hsee https://example.com and javascript:alert(1) here.\n',
+			));
+			const seq = a.frame_seq();
+			for (let i = 0; i < 30; i++) {
+				await new Promise((r) => requestAnimationFrame(() => r(null)));
+				if (a.frame_seq() !== seq) break;
+			}
+			const canvas = document.querySelector(
+				'canvas.alacritty-canvas',
+			) as HTMLCanvasElement;
+			const rect = canvas.getBoundingClientRect();
+			return {
+				rect: { x: rect.x, y: rect.y },
+				cellW: a.cell_width(),
+				cellH: a.cell_height(),
+				lineText: a.line_text(0),
+			};
+		});
+
+		// Compute click coords. "see " is 4 chars (cols 0-3); the safe URL
+		// starts at col 4 and runs to col ~22. The bad `javascript:` URL
+		// starts at col 28.
+		const ix = (col: number) => geom.rect.x + col * geom.cellW + geom.cellW / 2;
+		const iy = geom.rect.y + geom.cellH / 2;
+		const safeX = ix(10); // somewhere inside "https://example.com"
+		const badX = ix(32);  // somewhere inside "javascript:alert(1)"
+
+		// Ctrl+click the safe URL.
+		await page.keyboard.down('Control');
+		await page.mouse.move(safeX, iy);
+		await page.mouse.down({ button: 'left' });
+		await page.mouse.up({ button: 'left' });
+		// Ctrl+click the javascript URL — should be blocked by the allowlist.
+		await page.mouse.move(badX, iy);
+		await page.mouse.down({ button: 'left' });
+		await page.mouse.up({ button: 'left' });
+		await page.keyboard.up('Control');
+
+		const opens = await page.evaluate(() => (window as any).__opens);
+		expect(opens).toEqual(['https://example.com']);
+	});
+
 	test('paste on /compare wraps text with \\e[200~ when bracketed paste is on', async ({
 		page,
 	}) => {
