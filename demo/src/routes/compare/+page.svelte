@@ -14,6 +14,10 @@
 
 	let xtermEl: HTMLDivElement;
 	let alacrittyCanvas: HTMLCanvasElement;
+	let searchInput: HTMLInputElement | undefined;
+	let searchOpen = $state(false);
+	let searchPattern = $state('');
+	let searchStatus = $state('');
 
 	let xtermTerm: any = null;
 	let xtermFit: any = null;
@@ -269,6 +273,51 @@
 		}
 	}
 
+	function onSearchInput() {
+		if (!alacritty) return;
+		const pat = searchPattern;
+		if (!pat) {
+			alacritty.set_search_pattern('');
+			alacritty.selection_clear?.();
+			searchStatus = '';
+			return;
+		}
+		const ok = alacritty.set_search_pattern(pat);
+		if (!ok) {
+			searchStatus = 'invalid regex';
+			alacritty.selection_clear?.();
+			return;
+		}
+		// Search forward from the top of the viewport. Returns
+		// [start_row, start_col, end_row, end_col] in viewport coords.
+		const hit = alacritty.search_next(0, 0, true);
+		if (!hit) {
+			searchStatus = 'no match';
+			alacritty.selection_clear?.();
+			return;
+		}
+		searchStatus = 'match';
+		// Visualise: scroll to the hit row, then set a selection range so
+		// the match is highlighted via the existing selection inversion.
+		alacritty.scroll_to_bottom?.();
+		alacritty.selection_start(hit[0], hit[1], true);
+		// search_next returns the inclusive end col; selection_update with
+		// side_left=false includes it.
+		alacritty.selection_update(hit[2], hit[3], false);
+	}
+
+	function onSearchKey(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			searchOpen = false;
+			searchPattern = '';
+			searchStatus = '';
+			alacritty?.set_search_pattern?.('');
+			alacritty?.selection_clear?.();
+			alacrittyCanvas.focus({ preventScroll: true });
+		}
+	}
+
 	function sendInput(bytes: Uint8Array) {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;
 		const framed = new Uint8Array(1 + bytes.length);
@@ -340,6 +389,13 @@
 		// Forward keystrokes from the alacritty canvas (it's the focused one more often
 		// since xterm.js captures its own keystrokes via its internal textarea).
 		alacrittyCanvas.addEventListener('keydown', (e) => {
+			// Ctrl/Cmd+Shift+F: open the regex search bar (alacritty default).
+			if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+				e.preventDefault();
+				searchOpen = true;
+				queueMicrotask(() => searchInput?.focus());
+				return;
+			}
 			// Ctrl/Cmd+Shift+C: copy selection.
 			if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
 				const text = alacritty.selection_text?.();
@@ -583,6 +639,20 @@
 				<span class="meta">Rust → wasm32 → Canvas2D</span>
 			</div>
 			<div class="pane-body">
+				{#if searchOpen}
+					<div class="search-bar">
+						<input
+							bind:this={searchInput}
+							bind:value={searchPattern}
+							oninput={onSearchInput}
+							onkeydown={onSearchKey}
+							placeholder="regex search (Esc to close)"
+							class="search-input"
+							spellcheck="false"
+						/>
+						<span class="search-status">{searchStatus}</span>
+					</div>
+				{/if}
 				<canvas
 					bind:this={alacrittyCanvas}
 					tabindex="0"
@@ -755,6 +825,7 @@
 		height: 560px;
 		padding: 6px;
 		background: #1d1f21;
+		position: relative;
 	}
 	.xterm-host {
 		width: 100%;
@@ -765,5 +836,36 @@
 		height: 100%;
 		display: block;
 		outline: none;
+	}
+	.search-bar {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 8px;
+		background: #282a2e;
+		border: 1px solid #373b41;
+		border-radius: 4px;
+		z-index: 10;
+	}
+	.search-input {
+		background: #1d1f21;
+		color: #c5c8c6;
+		border: 1px solid #373b41;
+		border-radius: 3px;
+		padding: 2px 6px;
+		font: 12px ui-monospace, Menlo, monospace;
+		min-width: 200px;
+		outline: none;
+	}
+	.search-input:focus {
+		border-color: #5e81ac;
+	}
+	.search-status {
+		font: 11px ui-monospace, Menlo, monospace;
+		color: #969896;
+		min-width: 64px;
 	}
 </style>

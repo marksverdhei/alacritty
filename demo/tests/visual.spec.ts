@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 /**
  * Visual regression tests using Playwright's `toHaveScreenshot()`.
@@ -28,7 +28,7 @@ test.describe('visual regression', () => {
 	// then feed bytes locally and wait for render. Killing the WS is the
 	// only way to make the baseline deterministic — different users have
 	// different PS1 (hostname, cwd, starship prompt segments).
-	const setup = async (page, content: string) => {
+	const setup = async (page: Page, content: string) => {
 		await page.goto('/compare');
 		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
 			timeout: 15_000,
@@ -42,7 +42,7 @@ test.describe('visual regression', () => {
 		// in-flight bash output by waiting a couple of frames. After that
 		// CSI 2J + cursor-home clears the buffer and the feed is what
 		// stays on screen.
-		await page.evaluate(async (text) => {
+		await page.evaluate(async (text: string) => {
 			const cmp = (window as any).__cmp;
 			const a = cmp.alacritty;
 			cmp.ws.close();

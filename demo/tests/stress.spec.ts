@@ -461,6 +461,60 @@ test.describe('alacritty wasm stress benchmark', () => {
 		);
 	});
 
+	test('Ctrl+Shift+F opens search, typing pattern selects first match', async ({ page }) => {
+		await page.goto('/compare');
+		await page.waitForFunction(() => Boolean((window as any).__cmp?.alacritty), {
+			timeout: 15_000,
+		});
+
+		// Settle: close PTY, clear, feed known content.
+		await page.evaluate(async () => {
+			const cmp = (window as any).__cmp;
+			try { cmp.ws.close(); } catch {}
+			await new Promise((r) => setTimeout(r, 200));
+			cmp.alacritty.feed(
+				new TextEncoder().encode('\x1b[2J\x1b[Halpha beta gamma\r\ndelta epsilon zeta\r\n'),
+			);
+			for (let i = 0; i < 30; i++) {
+				await new Promise((r) => requestAnimationFrame(() => r(null)));
+			}
+		});
+
+		// Focus the canvas then trigger Ctrl+Shift+F.
+		await page.locator('canvas.alacritty-canvas').focus();
+		await page.keyboard.press('Control+Shift+F');
+
+		// Search input should be visible + focused.
+		const search = page.locator('.search-input');
+		await expect(search).toBeVisible();
+
+		// Type a pattern that matches "gamma".
+		await search.fill('gamma');
+
+		// Wait briefly for selection to settle, then check it.
+		await page.waitForFunction(
+			() => (window as any).__cmp.alacritty.selection_text() === 'gamma',
+			null,
+			{ timeout: 2000 },
+		);
+		const selected = await page.evaluate(() =>
+			(window as any).__cmp.alacritty.selection_text(),
+		);
+		expect(selected).toBe('gamma');
+
+		// Status text should read "match".
+		const status = await page.locator('.search-status').textContent();
+		expect(status).toBe('match');
+
+		// Escape closes + clears.
+		await search.press('Escape');
+		await expect(search).toBeHidden();
+		const clearedSelection = await page.evaluate(() =>
+			(window as any).__cmp.alacritty.selection_text(),
+		);
+		expect(clearedSelection).toBeFalsy();
+	});
+
 	test('Ctrl+click on a plain-text URL opens it via window.open', async ({ page }) => {
 		// Complements the OSC 8 test: shells that don't emit OSC 8 still
 		// print URLs as raw text. canvas-handlers.ts's Ctrl+click handler
