@@ -393,6 +393,16 @@ impl AlacrittyTerminal {
         app.dirty = true;
     }
 
+    /// Start a block (rectangular) selection at the given viewport cell.
+    /// JS dispatches to this on Ctrl+Alt+drag (Cmd+Alt on mac).
+    pub fn selection_start_block(&self, row: i32, column: u32, side_left: bool) {
+        let Ok(mut app) = self.state.try_borrow_mut() else {
+            return;
+        };
+        app.terminal.selection_start_block(row, column as usize, side_left);
+        app.dirty = true;
+    }
+
     /// Extend the active selection to the given viewport cell.
     pub fn selection_update(&self, row: i32, column: u32, side_left: bool) {
         let Ok(mut app) = self.state.try_borrow_mut() else {
@@ -534,6 +544,98 @@ impl AlacrittyTerminal {
             .try_borrow()
             .map(|a| a.terminal.mouse_mode_bits() != 0)
             .unwrap_or(false)
+    }
+
+    /// Current cursor row (grid line). Used by tests to verify
+    /// readline / TUI movement behaviour through the live shell.
+    pub fn cursor_row(&self) -> i32 {
+        self.state.try_borrow().map(|a| a.terminal.cursor_row()).unwrap_or(0)
+    }
+
+    /// Current cursor column (zero-based).
+    pub fn cursor_col(&self) -> u32 {
+        self.state.try_borrow().map(|a| a.terminal.cursor_col()).unwrap_or(0)
+    }
+
+    /// Packed keyboard-mode flags for the JS side to consult on each keystroke.
+    /// Bit 0 = APP_CURSOR (DECCKM) — arrows/Home/End use SS3 (`\eOA`) form
+    /// Bit 1 = APP_KEYPAD (DECPAM)
+    /// Bit 2 = FOCUS_IN_OUT (DECSET 1004) — host should emit `\e[I` / `\e[O`
+    pub fn keyboard_mode_bits(&self) -> u32 {
+        self.state
+            .try_borrow()
+            .map(|a| a.terminal.keyboard_mode_bits())
+            .unwrap_or(0)
+    }
+
+    /// Whether the terminal is currently in bracketed-paste mode (DECSET 2004).
+    /// JS reads this when sending pasted text so it can wrap with
+    /// `\e[200~...\e[201~` to let shells distinguish typed from pasted bytes.
+    pub fn bracketed_paste(&self) -> bool {
+        self.state
+            .try_borrow()
+            .map(|a| a.terminal.bracketed_paste())
+            .unwrap_or(false)
+    }
+
+    /// OSC 8 hyperlink URI at the given viewport cell, or `None`. JS calls
+    /// this on mousemove to decide whether to switch the cursor to a pointer,
+    /// and on click (with Ctrl/Cmd) to `window.open` the URI.
+    pub fn hyperlink_at(&self, row: i32, column: u32) -> Option<String> {
+        let app = self.state.try_borrow().ok()?;
+        app.terminal.hyperlink_at(row, column as usize)
+    }
+
+    /// Concatenated text of the cells on the given viewport row, with
+    /// trailing spaces trimmed. JS uses this on Ctrl+click to regex-match
+    /// URLs in plain (non-OSC-8) text.
+    pub fn line_text(&self, row: i32) -> Option<String> {
+        let app = self.state.try_borrow().ok()?;
+        app.terminal.line_text(row)
+    }
+
+    /// Compile a search pattern. `true` on success; `false` on regex parse
+    /// error. Empty `pattern` clears the active search. Subsequent
+    /// `search_next` calls use this compiled regex.
+    pub fn set_search_pattern(&self, pattern: &str) -> bool {
+        let Ok(mut app) = self.state.try_borrow_mut() else { return false };
+        app.terminal.set_search_pattern(pattern)
+    }
+
+    /// Whether a search pattern is currently compiled.
+    pub fn has_search_pattern(&self) -> bool {
+        self.state
+            .try_borrow()
+            .map(|a| a.terminal.has_search_pattern())
+            .unwrap_or(false)
+    }
+
+    /// Find the next match of the active pattern from `(row, column)`.
+    /// `forward = false` searches backward. Returns
+    /// `[start_row, start_col, end_row, end_col]` in viewport coords, or
+    /// `None` if no pattern is set or no match was found.
+    pub fn search_next(&self, row: i32, column: u32, forward: bool) -> Option<Vec<i32>> {
+        let mut app = self.state.try_borrow_mut().ok()?;
+        app.terminal.search_next(row, column, forward)
+    }
+
+    /// Enumerate every match of the active pattern in the given viewport
+    /// row range, inclusive. Returns a flat `Vec<i32>` where every four
+    /// entries are `[start_row, start_col, end_row, end_col]`. JS uses
+    /// `.length / 4` for the match count and slices the rest for "X of N"
+    /// indexing. Returns `None` if no pattern is set.
+    pub fn all_matches(&self, start_row: i32, end_row: i32) -> Option<Vec<i32>> {
+        let mut app = self.state.try_borrow_mut().ok()?;
+        app.terminal.all_matches(start_row, end_row)
+    }
+
+    /// Latest OSC 0/2 window title the shell pushed, or `None` if never set.
+    /// JS typically polls this on a low-frequency interval and mirrors it
+    /// into `document.title`. Polling (vs. callbacks) keeps the JS↔WASM
+    /// boundary simple — there's no closure ownership to track and JS can
+    /// debounce as aggressively as it likes.
+    pub fn title(&self) -> Option<String> {
+        self.state.try_borrow().ok().and_then(|a| a.terminal.event_proxy().title())
     }
 
     /// Paste text into the PTY. Wraps the text with bracketed-paste markers
@@ -745,10 +847,74 @@ impl AlacrittyTerminal {
                     parse_ms = p.now() - start;
                 }
 
+                // Answer any OSC 4/10/11/12 colour queries the shell pushed.
+                // Drain BEFORE the render so the reply lands in pty_writes
+                // before the WebSocket flush at the top of the next frame.
+                let color_requests = app.terminal.event_proxy().drain_color_requests();
+                if !color_requests.is_empty() {
+                    use alacritty_terminal::vte::ansi::NamedColor;
+                    let term = app.terminal.term().clone();
+                    let term_guard = term.lock();
+                    let term_colors = term_guard.colors();
+                    let mut replies: Vec<String> = Vec::with_capacity(color_requests.len());
+                    for (index, formatter) in color_requests {
+                        // term.colors() carries user overrides (palette /
+                        // OSC 4/10/11/12 sets); fall back to the named-color
+                        // default for the first 16 + special slots.
+                        let color = term_colors[index].or_else(|| {
+                            // Indices 0..16 + the named-color slots have
+                            // sensible defaults; beyond that we fall back to
+                            // white rather than panic.
+                            (index < 19)
+                                .then(|| {
+                                    let named = match index {
+                                        0 => NamedColor::Black,
+                                        1 => NamedColor::Red,
+                                        2 => NamedColor::Green,
+                                        3 => NamedColor::Yellow,
+                                        4 => NamedColor::Blue,
+                                        5 => NamedColor::Magenta,
+                                        6 => NamedColor::Cyan,
+                                        7 => NamedColor::White,
+                                        8 => NamedColor::BrightBlack,
+                                        9 => NamedColor::BrightRed,
+                                        10 => NamedColor::BrightGreen,
+                                        11 => NamedColor::BrightYellow,
+                                        12 => NamedColor::BrightBlue,
+                                        13 => NamedColor::BrightMagenta,
+                                        14 => NamedColor::BrightCyan,
+                                        15 => NamedColor::BrightWhite,
+                                        16 => NamedColor::Foreground,
+                                        17 => NamedColor::Background,
+                                        18 => NamedColor::Cursor,
+                                        _ => NamedColor::Foreground,
+                                    };
+                                    renderer::colors::default_named_color(named)
+                                })
+                        }).unwrap_or(alacritty_terminal::vte::ansi::Rgb { r: 255, g: 255, b: 255 });
+                        replies.push(formatter(color));
+                    }
+                    drop(term_guard);
+                    if let Some(ws) = &mut app.ws {
+                        for reply in replies {
+                            ws.send_pty_data(reply.as_bytes());
+                        }
+                    }
+                }
+
+                // Force a redraw while a BEL flash is decaying so the fade
+                // actually animates instead of stopping after one frame.
+                let bell_active = app.terminal.event_proxy().bell_active();
+                if bell_active {
+                    app.dirty = true;
+                }
+
                 // Render if dirty.
                 if app.dirty {
                     let focused = app.focused;
                     app.renderer.set_focused(focused);
+                    let bell_intensity = app.terminal.event_proxy().bell_intensity();
+                    app.renderer.set_bell_intensity(bell_intensity);
                     let term = app.terminal.term().clone();
                     let term_guard = term.lock();
                     let render_start = perf.as_ref().map(|p| p.now());
@@ -758,7 +924,16 @@ impl AlacrittyTerminal {
                         (Some(p), Some(start)) => p.now() - start,
                         _ => 0.0,
                     };
-                    app.dirty = false;
+                    // Step the bell decay (now that this frame's intensity
+                    // landed on the canvas). When this frame had a non-zero
+                    // bell we mark dirty for the NEXT frame too so the final
+                    // `intensity == 0` render actually paints — the canvas
+                    // clear is what removes the overlay, not the decay alone.
+                    let was_bell_frame = bell_intensity > 0.0;
+                    if was_bell_frame {
+                        app.terminal.event_proxy().decay_bell();
+                    }
+                    app.dirty = was_bell_frame;
                     app.last_parse_ms = parse_ms;
                     app.last_render_ms = render_ms;
                     app.frame_seq = app.frame_seq.wrapping_add(1);
