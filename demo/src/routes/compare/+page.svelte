@@ -18,6 +18,9 @@
 	let searchOpen = $state(false);
 	let searchPattern = $state('');
 	let searchStatus = $state('');
+	// Last match we selected, as [startRow, startCol, endRow, endCol] in
+	// viewport coords. Used as the origin for next/prev navigation.
+	let lastMatch: number[] | null = null;
 
 	let xtermTerm: any = null;
 	let xtermFit: any = null;
@@ -273,6 +276,22 @@
 		}
 	}
 
+	// Visualise a search hit by selecting its range. Mutates lastMatch.
+	function applyHit(hit: number[] | null): boolean {
+		if (!hit) {
+			searchStatus = 'no match';
+			alacritty?.selection_clear?.();
+			lastMatch = null;
+			return false;
+		}
+		searchStatus = 'match';
+		lastMatch = hit;
+		alacritty.scroll_to_bottom?.();
+		alacritty.selection_start(hit[0], hit[1], true);
+		alacritty.selection_update(hit[2], hit[3], false);
+		return true;
+	}
+
 	function onSearchInput() {
 		if (!alacritty) return;
 		const pat = searchPattern;
@@ -280,30 +299,52 @@
 			alacritty.set_search_pattern('');
 			alacritty.selection_clear?.();
 			searchStatus = '';
+			lastMatch = null;
 			return;
 		}
 		const ok = alacritty.set_search_pattern(pat);
 		if (!ok) {
 			searchStatus = 'invalid regex';
 			alacritty.selection_clear?.();
+			lastMatch = null;
 			return;
 		}
-		// Search forward from the top of the viewport. Returns
-		// [start_row, start_col, end_row, end_col] in viewport coords.
-		const hit = alacritty.search_next(0, 0, true);
+		applyHit(alacritty.search_next(0, 0, true));
+	}
+
+	// Step to the next (forward=true) or previous match. Searches from one
+	// cell past the current match in the requested direction; if no match
+	// is found, wraps to the opposite edge of the grid and retries once
+	// so the user can cycle through matches with repeated Enter/Shift+Enter.
+	function searchAdvance(forward: boolean) {
+		if (!alacritty || !alacritty.has_search_pattern?.()) return;
+		const cols = alacritty.cols();
+		const rows = alacritty.rows();
+		let row: number;
+		let col: number;
+		if (lastMatch) {
+			if (forward) {
+				// Step one cell past the match end.
+				row = lastMatch[2];
+				col = lastMatch[3] + 1;
+				if (col >= cols) { row += 1; col = 0; }
+			} else {
+				row = lastMatch[0];
+				col = lastMatch[1] - 1;
+				if (col < 0) { row -= 1; col = cols - 1; }
+			}
+		} else {
+			row = forward ? 0 : rows - 1;
+			col = forward ? 0 : cols - 1;
+		}
+		let hit = alacritty.search_next(row, col, forward);
 		if (!hit) {
-			searchStatus = 'no match';
-			alacritty.selection_clear?.();
-			return;
+			// Wrap.
+			const wrapRow = forward ? 0 : rows - 1;
+			const wrapCol = forward ? 0 : cols - 1;
+			hit = alacritty.search_next(wrapRow, wrapCol, forward);
 		}
-		searchStatus = 'match';
-		// Visualise: scroll to the hit row, then set a selection range so
-		// the match is highlighted via the existing selection inversion.
-		alacritty.scroll_to_bottom?.();
-		alacritty.selection_start(hit[0], hit[1], true);
-		// search_next returns the inclusive end col; selection_update with
-		// side_left=false includes it.
-		alacritty.selection_update(hit[2], hit[3], false);
+		applyHit(hit);
 	}
 
 	function onSearchKey(e: KeyboardEvent) {
@@ -312,9 +353,16 @@
 			searchOpen = false;
 			searchPattern = '';
 			searchStatus = '';
+			lastMatch = null;
 			alacritty?.set_search_pattern?.('');
 			alacritty?.selection_clear?.();
 			alacrittyCanvas.focus({ preventScroll: true });
+			return;
+		}
+		// Enter → next match, Shift+Enter → previous.
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			searchAdvance(!e.shiftKey);
 		}
 	}
 
@@ -646,10 +694,22 @@
 							bind:value={searchPattern}
 							oninput={onSearchInput}
 							onkeydown={onSearchKey}
-							placeholder="regex search (Esc to close)"
+							placeholder="regex search (Enter=next, Shift+Enter=prev, Esc to close)"
 							class="search-input"
 							spellcheck="false"
 						/>
+						<button
+							type="button"
+							class="search-nav"
+							title="Previous match (Shift+Enter)"
+							onclick={() => searchAdvance(false)}
+						>↑</button>
+						<button
+							type="button"
+							class="search-nav"
+							title="Next match (Enter)"
+							onclick={() => searchAdvance(true)}
+						>↓</button>
 						<span class="search-status">{searchStatus}</span>
 					</div>
 				{/if}
@@ -867,5 +927,21 @@
 		font: 11px ui-monospace, Menlo, monospace;
 		color: #969896;
 		min-width: 64px;
+	}
+	.search-nav {
+		background: #1d1f21;
+		color: #c5c8c6;
+		border: 1px solid #373b41;
+		border-radius: 3px;
+		padding: 0 6px;
+		font: 12px ui-monospace, Menlo, monospace;
+		cursor: pointer;
+		min-width: 24px;
+	}
+	.search-nav:hover {
+		border-color: #5e81ac;
+	}
+	.search-nav:active {
+		background: #373b41;
 	}
 </style>

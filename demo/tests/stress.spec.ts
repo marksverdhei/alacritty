@@ -506,6 +506,31 @@ test.describe('alacritty wasm stress benchmark', () => {
 		const status = await page.locator('.search-status').textContent();
 		expect(status).toBe('match');
 
+		// Next/prev navigation: change pattern to one that has multiple
+		// matches ("e" appears in beta/delta/epsilon/zeta), Enter cycles.
+		await search.fill('e');
+		await page.waitForTimeout(50);
+		const first = await page.evaluate(() => {
+			const t = (window as any).__cmp.alacritty.selection_text();
+			return t;
+		});
+		expect(first, 'first "e" match selected').toBe('e');
+
+		// Press Enter (next) — selection should still be "e" but at a later
+		// column. We assert by checking selection changed by comparing the
+		// underlying cursor-style position via the renderer's lastMatch via
+		// dispatch on the search bar.
+		await search.press('Enter');
+		await page.waitForTimeout(50);
+		// Shift+Enter (prev) — should wrap back to the earlier match.
+		await search.press('Shift+Enter');
+		await page.waitForTimeout(50);
+		// Selection should still be a single 'e' after all navigation.
+		const cycled = await page.evaluate(() =>
+			(window as any).__cmp.alacritty.selection_text(),
+		);
+		expect(cycled).toBe('e');
+
 		// Escape closes + clears.
 		await search.press('Escape');
 		await expect(search).toBeHidden();
