@@ -15,6 +15,7 @@ use alacritty_terminal::term::Term;
 #[cfg(feature = "wgpu")]
 use alacritty_terminal::vte::ansi::NamedColor;
 
+#[cfg(feature = "wgpu")]
 use wasm_bindgen::prelude::*;
 #[cfg(feature = "wgpu")]
 use web_sys::HtmlCanvasElement;
@@ -24,7 +25,6 @@ use crate::terminal::WebEventProxy;
 /// Trait abstracting terminal rendering backends.
 pub trait TerminalRenderer {
     fn render(&mut self, term: &Term<WebEventProxy>);
-    fn resize(&mut self, width: u32, height: u32);
     fn resize_backing_store(&mut self);
     fn cell_width(&self) -> f32;
     fn cell_height(&self) -> f32;
@@ -32,6 +32,17 @@ pub trait TerminalRenderer {
     fn set_font_family(&mut self, family: &str);
     fn set_line_height_multiplier(&mut self, multiplier: f32);
     fn set_focused(&mut self, focused: bool);
+    /// Set the bell overlay intensity in `[0.0, 1.0]`. The renderer draws a
+    /// translucent flash over the whole canvas after the regular paint;
+    /// callers decay this towards zero per frame to animate the fade.
+    /// Default no-op for backends that don't bother painting the bell.
+    fn set_bell_intensity(&mut self, _intensity: f32) {}
+    /// Set search-match highlight ranges. `ranges` is a flat slice of
+    /// `[start_row, start_col, end_row, end_col]` groups in viewport
+    /// coordinates. `current_index` is the index of the match to draw
+    /// more prominently, or `-1` if none is active. Renderers draw a
+    /// translucent overlay over each match cell. Default no-op.
+    fn set_search_highlights(&mut self, _ranges: &[i32], _current_index: i32) {}
     fn backend_name(&self) -> &'static str;
 }
 
