@@ -8,7 +8,7 @@ use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config as TermConfig, TermMode};
 use alacritty_terminal::Term;
 use alacritty_terminal::index::Direction;
-use alacritty_terminal::term::search::RegexSearch;
+use alacritty_terminal::term::search::{RegexIter, RegexSearch};
 use alacritty_terminal::vte::ansi;
 use alacritty_terminal::vte::ansi::Rgb;
 
@@ -413,6 +413,36 @@ impl WebTerminal {
     /// Whether there's an active compiled search pattern.
     pub fn has_search_pattern(&self) -> bool {
         self.search_regex.is_some()
+    }
+
+    /// Enumerate every match of the active pattern between
+    /// `(start_row, 0)` and `(end_row, last_col)` inclusive, in viewport
+    /// coords. Returned vec is flat: each match contributes four entries
+    /// `[start_row, start_col, end_row, end_col]`. JS slices it into
+    /// 4-tuples.
+    ///
+    /// Returns `None` if no pattern is set. Returns `Some(vec![])` if a
+    /// pattern is set but no matches were found.
+    pub fn all_matches(&mut self, start_row: i32, end_row: i32) -> Option<Vec<i32>> {
+        let regex = self.search_regex.as_mut()?;
+        let term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let cols = term.columns();
+        let last_col = if cols == 0 { 0 } else { cols - 1 };
+        let start = Point::new(Line(start_row - display_offset), Column(0));
+        let end = Point::new(Line(end_row - display_offset), Column(last_col));
+        let mut out = Vec::new();
+        // RegexIter is `Right`-by-default for forward enumeration.
+        let iter = RegexIter::new(start, end, Direction::Right, &*term, regex);
+        for m in iter {
+            let s = m.start();
+            let e = m.end();
+            out.push(s.line.0 + display_offset);
+            out.push(s.column.0 as i32);
+            out.push(e.line.0 + display_offset);
+            out.push(e.column.0 as i32);
+        }
+        Some(out)
     }
 
     /// Find the next match of the active pattern starting from the given

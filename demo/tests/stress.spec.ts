@@ -502,12 +502,12 @@ test.describe('alacritty wasm stress benchmark', () => {
 		);
 		expect(selected).toBe('gamma');
 
-		// Status text should read "match".
+		// Status text should read "1 of 1" — single "gamma" in fed content.
 		const status = await page.locator('.search-status').textContent();
-		expect(status).toBe('match');
+		expect(status).toBe('1 of 1');
 
-		// Next/prev navigation: change pattern to one that has multiple
-		// matches ("e" appears in beta/delta/epsilon/zeta), Enter cycles.
+		// Next/prev navigation + match counter: change pattern to one that
+		// has multiple matches ("e" appears in beta/delta/epsilon/zeta).
 		await search.fill('e');
 		await page.waitForTimeout(50);
 		const first = await page.evaluate(() => {
@@ -516,15 +516,23 @@ test.describe('alacritty wasm stress benchmark', () => {
 		});
 		expect(first, 'first "e" match selected').toBe('e');
 
+		// Counter shows "X of N" — first match should be 1 of N.
+		const statusFirst = await page.locator('.search-status').textContent();
+		expect(statusFirst).toMatch(/^1 of \d+$/);
+
 		// Press Enter (next) — selection should still be "e" but at a later
-		// column. We assert by checking selection changed by comparing the
-		// underlying cursor-style position via the renderer's lastMatch via
-		// dispatch on the search bar.
+		// column, status should be "2 of N".
 		await search.press('Enter');
 		await page.waitForTimeout(50);
-		// Shift+Enter (prev) — should wrap back to the earlier match.
+		const statusSecond = await page.locator('.search-status').textContent();
+		expect(statusSecond).toMatch(/^2 of \d+$/);
+
+		// Shift+Enter (prev) — should go back to "1 of N".
 		await search.press('Shift+Enter');
 		await page.waitForTimeout(50);
+		const statusBack = await page.locator('.search-status').textContent();
+		expect(statusBack).toMatch(/^1 of \d+$/);
+
 		// Selection should still be a single 'e' after all navigation.
 		const cycled = await page.evaluate(() =>
 			(window as any).__cmp.alacritty.selection_text(),

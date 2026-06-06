@@ -126,6 +126,23 @@ fn bracketed_paste_flag_tracks_decset_2004() {
 }
 
 #[test]
+fn all_matches_enumerates_every_hit_in_range() {
+    let mut t = WebTerminal::new(40, 4);
+    t.process_bytes(b"foo bar foo baz foo\r\nfoo");
+    assert!(t.set_search_pattern("foo"));
+    let hits = t.all_matches(0, 1).expect("pattern is set");
+    // 4 matches total: 3 on line 0, 1 on line 1.
+    assert_eq!(hits.len() / 4, 4, "expected 4 matches, got {}", hits.len() / 4);
+    // First match: line 0, cols 0..2.
+    assert_eq!(hits[0..4], [0, 0, 0, 2]);
+    // Last match: line 1, cols 0..2.
+    assert_eq!(hits[12..16], [1, 0, 1, 2]);
+    // No pattern → None.
+    assert!(t.set_search_pattern(""));
+    assert!(t.all_matches(0, 1).is_none());
+}
+
+#[test]
 fn search_finds_pattern_forward_and_backward() {
     let mut t = WebTerminal::new(40, 4);
     t.process_bytes(b"alpha beta gamma\r\ndelta epsilon");

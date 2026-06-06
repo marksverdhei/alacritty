@@ -276,6 +276,34 @@
 		}
 	}
 
+	// Recompute "X of N" against the current viewport. Cheap to call after
+	// every nav step; for huge scrollback we'd want to cache, but the
+	// viewport is small enough that it doesn't show up in timing.
+	function updateMatchCount() {
+		if (!alacritty?.has_search_pattern?.()) {
+			searchStatus = '';
+			return;
+		}
+		const rows = alacritty.rows();
+		const all = alacritty.all_matches(0, rows - 1) as number[] | null;
+		if (!all) { searchStatus = ''; return; }
+		const total = all.length / 4;
+		if (total === 0) { searchStatus = 'no match'; return; }
+		if (!lastMatch) { searchStatus = `${total} match${total === 1 ? '' : 'es'}`; return; }
+		// Find the index of lastMatch in the enumerated list.
+		let idx = -1;
+		for (let i = 0; i < total; i++) {
+			const off = i * 4;
+			if (
+				all[off] === lastMatch[0] &&
+				all[off + 1] === lastMatch[1] &&
+				all[off + 2] === lastMatch[2] &&
+				all[off + 3] === lastMatch[3]
+			) { idx = i; break; }
+		}
+		searchStatus = idx >= 0 ? `${idx + 1} of ${total}` : `${total} match${total === 1 ? '' : 'es'}`;
+	}
+
 	// Visualise a search hit by selecting its range. Mutates lastMatch.
 	function applyHit(hit: number[] | null): boolean {
 		if (!hit) {
@@ -284,11 +312,11 @@
 			lastMatch = null;
 			return false;
 		}
-		searchStatus = 'match';
 		lastMatch = hit;
 		alacritty.scroll_to_bottom?.();
 		alacritty.selection_start(hit[0], hit[1], true);
 		alacritty.selection_update(hit[2], hit[3], false);
+		updateMatchCount();
 		return true;
 	}
 

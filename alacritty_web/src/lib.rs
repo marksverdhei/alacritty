@@ -619,6 +619,16 @@ impl AlacrittyTerminal {
         app.terminal.search_next(row, column, forward)
     }
 
+    /// Enumerate every match of the active pattern in the given viewport
+    /// row range, inclusive. Returns a flat `Vec<i32>` where every four
+    /// entries are `[start_row, start_col, end_row, end_col]`. JS uses
+    /// `.length / 4` for the match count and slices the rest for "X of N"
+    /// indexing. Returns `None` if no pattern is set.
+    pub fn all_matches(&self, start_row: i32, end_row: i32) -> Option<Vec<i32>> {
+        let mut app = self.state.try_borrow_mut().ok()?;
+        app.terminal.all_matches(start_row, end_row)
+    }
+
     /// Latest OSC 0/2 window title the shell pushed, or `None` if never set.
     /// JS typically polls this on a low-frequency interval and mirrors it
     /// into `document.title`. Polling (vs. callbacks) keeps the JS↔WASM
