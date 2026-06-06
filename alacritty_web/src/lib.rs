@@ -629,6 +629,17 @@ impl AlacrittyTerminal {
         app.terminal.all_matches(start_row, end_row)
     }
 
+    /// Set the search-match highlight overlay on the renderer. `ranges`
+    /// is flat groups of 4 (start_row, start_col, end_row, end_col) in
+    /// viewport coords; `current_index` is the index of the "current"
+    /// match in those groups (drawn more prominently), or `-1` for none.
+    /// Pass an empty `ranges` to clear the highlights.
+    pub fn set_search_highlights(&self, ranges: Vec<i32>, current_index: i32) {
+        let Ok(mut app) = self.state.try_borrow_mut() else { return };
+        app.renderer.set_search_highlights(&ranges, current_index);
+        app.dirty = true;
+    }
+
     /// Latest OSC 0/2 window title the shell pushed, or `None` if never set.
     /// JS typically polls this on a low-frequency interval and mirrors it
     /// into `document.title`. Polling (vs. callbacks) keeps the JS↔WASM

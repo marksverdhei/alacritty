@@ -276,46 +276,63 @@
 		}
 	}
 
-	// Recompute "X of N" against the current viewport. Cheap to call after
-	// every nav step; for huge scrollback we'd want to cache, but the
-	// viewport is small enough that it doesn't show up in timing.
+	// Recompute "X of N" against the current viewport, and push all
+	// matches as render-time highlights so they're visible at a glance
+	// (the current match is drawn more prominently). Cheap to call after
+	// every nav step; if scrollback-wide enumeration ever shows up in
+	// timing, we can scope to the visible area then.
 	function updateMatchCount() {
 		if (!alacritty?.has_search_pattern?.()) {
 			searchStatus = '';
+			alacritty?.set_search_highlights?.(new Int32Array(), -1);
 			return;
 		}
 		const rows = alacritty.rows();
 		const all = alacritty.all_matches(0, rows - 1) as number[] | null;
-		if (!all) { searchStatus = ''; return; }
+		if (!all) {
+			searchStatus = '';
+			alacritty.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
 		const total = all.length / 4;
-		if (total === 0) { searchStatus = 'no match'; return; }
-		if (!lastMatch) { searchStatus = `${total} match${total === 1 ? '' : 'es'}`; return; }
+		if (total === 0) {
+			searchStatus = 'no match';
+			alacritty.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
 		// Find the index of lastMatch in the enumerated list.
 		let idx = -1;
-		for (let i = 0; i < total; i++) {
-			const off = i * 4;
-			if (
-				all[off] === lastMatch[0] &&
-				all[off + 1] === lastMatch[1] &&
-				all[off + 2] === lastMatch[2] &&
-				all[off + 3] === lastMatch[3]
-			) { idx = i; break; }
+		if (lastMatch) {
+			for (let i = 0; i < total; i++) {
+				const off = i * 4;
+				if (
+					all[off] === lastMatch[0] &&
+					all[off + 1] === lastMatch[1] &&
+					all[off + 2] === lastMatch[2] &&
+					all[off + 3] === lastMatch[3]
+				) { idx = i; break; }
+			}
 		}
-		searchStatus = idx >= 0 ? `${idx + 1} of ${total}` : `${total} match${total === 1 ? '' : 'es'}`;
+		searchStatus = idx >= 0
+			? `${idx + 1} of ${total}`
+			: `${total} match${total === 1 ? '' : 'es'}`;
+		// Push as Int32Array — wasm-bindgen `Vec<i32>` parameter accepts
+		// typed arrays without a copy at the boundary.
+		alacritty.set_search_highlights?.(new Int32Array(all), idx);
 	}
 
-	// Visualise a search hit by selecting its range. Mutates lastMatch.
+	// Visualise a search hit by recording it; highlights are drawn by
+	// the renderer via set_search_highlights, NOT by selection (so the
+	// user's own text selection isn't clobbered).
 	function applyHit(hit: number[] | null): boolean {
 		if (!hit) {
 			searchStatus = 'no match';
-			alacritty?.selection_clear?.();
+			alacritty?.set_search_highlights?.(new Int32Array(), -1);
 			lastMatch = null;
 			return false;
 		}
 		lastMatch = hit;
 		alacritty.scroll_to_bottom?.();
-		alacritty.selection_start(hit[0], hit[1], true);
-		alacritty.selection_update(hit[2], hit[3], false);
 		updateMatchCount();
 		return true;
 	}
@@ -383,7 +400,7 @@
 			searchStatus = '';
 			lastMatch = null;
 			alacritty?.set_search_pattern?.('');
-			alacritty?.selection_clear?.();
+			alacritty?.set_search_highlights?.(new Int32Array(), -1);
 			alacrittyCanvas.focus({ preventScroll: true });
 			return;
 		}

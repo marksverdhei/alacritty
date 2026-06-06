@@ -37,6 +37,12 @@ pub trait TerminalRenderer {
     /// callers decay this towards zero per frame to animate the fade.
     /// Default no-op for backends that don't bother painting the bell.
     fn set_bell_intensity(&mut self, _intensity: f32) {}
+    /// Set search-match highlight ranges. `ranges` is a flat slice of
+    /// `[start_row, start_col, end_row, end_col]` groups in viewport
+    /// coordinates. `current_index` is the index of the match to draw
+    /// more prominently, or `-1` if none is active. Renderers draw a
+    /// translucent overlay over each match cell. Default no-op.
+    fn set_search_highlights(&mut self, _ranges: &[i32], _current_index: i32) {}
     fn backend_name(&self) -> &'static str;
 }
 

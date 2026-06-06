@@ -491,53 +491,45 @@ test.describe('alacritty wasm stress benchmark', () => {
 		// Type a pattern that matches "gamma".
 		await search.fill('gamma');
 
-		// Wait briefly for selection to settle, then check it.
+		// Wait for the status text to flip to "1 of 1" — the search no
+		// longer uses selection (renderer owns highlights now), so we
+		// observe via the status string the UI computes from all_matches.
 		await page.waitForFunction(
-			() => (window as any).__cmp.alacritty.selection_text() === 'gamma',
+			() => document.querySelector('.search-status')?.textContent === '1 of 1',
 			null,
 			{ timeout: 2000 },
 		);
-		const selected = await page.evaluate(() =>
+
+		// Make sure search did NOT clobber the user's selection.
+		const userSelection = await page.evaluate(() =>
 			(window as any).__cmp.alacritty.selection_text(),
 		);
-		expect(selected).toBe('gamma');
-
-		// Status text should read "1 of 1" — single "gamma" in fed content.
-		const status = await page.locator('.search-status').textContent();
-		expect(status).toBe('1 of 1');
+		expect(userSelection, 'search must not touch selection').toBeFalsy();
 
 		// Next/prev navigation + match counter: change pattern to one that
 		// has multiple matches ("e" appears in beta/delta/epsilon/zeta).
 		await search.fill('e');
-		await page.waitForTimeout(50);
-		const first = await page.evaluate(() => {
-			const t = (window as any).__cmp.alacritty.selection_text();
-			return t;
-		});
-		expect(first, 'first "e" match selected').toBe('e');
-
-		// Counter shows "X of N" — first match should be 1 of N.
-		const statusFirst = await page.locator('.search-status').textContent();
-		expect(statusFirst).toMatch(/^1 of \d+$/);
-
-		// Press Enter (next) — selection should still be "e" but at a later
-		// column, status should be "2 of N".
-		await search.press('Enter');
-		await page.waitForTimeout(50);
-		const statusSecond = await page.locator('.search-status').textContent();
-		expect(statusSecond).toMatch(/^2 of \d+$/);
-
-		// Shift+Enter (prev) — should go back to "1 of N".
-		await search.press('Shift+Enter');
-		await page.waitForTimeout(50);
-		const statusBack = await page.locator('.search-status').textContent();
-		expect(statusBack).toMatch(/^1 of \d+$/);
-
-		// Selection should still be a single 'e' after all navigation.
-		const cycled = await page.evaluate(() =>
-			(window as any).__cmp.alacritty.selection_text(),
+		await page.waitForFunction(
+			() => /^1 of \d+$/.test(document.querySelector('.search-status')?.textContent ?? ''),
+			null,
+			{ timeout: 2000 },
 		);
-		expect(cycled).toBe('e');
+
+		// Press Enter (next) → "2 of N".
+		await search.press('Enter');
+		await page.waitForFunction(
+			() => /^2 of \d+$/.test(document.querySelector('.search-status')?.textContent ?? ''),
+			null,
+			{ timeout: 2000 },
+		);
+
+		// Shift+Enter (prev) → "1 of N".
+		await search.press('Shift+Enter');
+		await page.waitForFunction(
+			() => /^1 of \d+$/.test(document.querySelector('.search-status')?.textContent ?? ''),
+			null,
+			{ timeout: 2000 },
+		);
 
 		// Escape closes + clears.
 		await search.press('Escape');

@@ -113,6 +113,13 @@ pub struct Canvas2dRenderer {
     /// Bell-flash intensity in [0,1]. Drawn as a translucent white overlay
     /// after the main paint. Zero = no overlay.
     bell_intensity: f32,
+    /// Search-match highlight ranges in viewport coords. Flat groups of 4:
+    /// `[start_row, start_col, end_row, end_col]`. Drawn as a translucent
+    /// overlay AFTER the regular paint so all matches show up at once.
+    search_highlights: Vec<i32>,
+    /// Index of the "current" match — the one search navigation last
+    /// landed on. Drawn with a more saturated colour. `-1` for none.
+    current_match_index: i32,
     /// Persistent "rgb(r,g,b)" string cache. Each lookup saves a `format!` +
     /// the wasm→JS UTF-16 conversion of a freshly-allocated string. For
     /// typical workloads the working set is the 16/256-color palette plus a
@@ -190,6 +197,8 @@ impl Canvas2dRenderer {
             device_pixel_ratio: dpr,
             focused: true,
             bell_intensity: 0.0,
+            search_highlights: Vec::new(),
+            current_match_index: -1,
             color_cache: RefCell::new(HashMap::with_capacity(64)),
             current_fill: Cell::new(None),
             grid_buf: RefCell::new(Vec::new()),
@@ -746,6 +755,62 @@ impl Canvas2dRenderer {
             }
         }
 
+        // Search-match highlight pass. Drawn after text + cursor so the
+        // overlay sits visibly on top. Each match group is 4 ints in
+        // viewport coords; for multi-row matches we draw a separate rect
+        // per row (the alacritty_terminal grid is row-major, no diagonal
+        // selection). Current match gets a saturated orange; others get
+        // a softer yellow tint.
+        if !self.search_highlights.is_empty() {
+            let display_offset = display_offset; // viewport row 0 = grid row -display_offset
+            let canvas_w_px = canvas_width;
+            for (i, chunk) in self.search_highlights.chunks_exact(4).enumerate() {
+                let (sr, sc, er, ec) = (chunk[0], chunk[1], chunk[2], chunk[3]);
+                // Translate viewport rows to render coords (rows are
+                // 0..screen_lines after the +display_offset that the
+                // build-grid pass already applied).
+                let sr_v = sr + display_offset;
+                let er_v = er + display_offset;
+                if er_v < 0 || sr_v >= screen_lines as i32 {
+                    continue;
+                }
+                let is_current = i as i32 == self.current_match_index;
+                let style = if is_current {
+                    "rgba(255,165,0,0.55)" // saturated orange
+                } else {
+                    "rgba(255,235,59,0.30)" // soft yellow
+                };
+                self.ctx.set_fill_style_str(style);
+                // Single-row vs multi-row.
+                if sr_v == er_v {
+                    let y = sr_v as f64 * ch;
+                    let x = sc as f64 * cw;
+                    let w = ((ec - sc + 1) as f64) * cw;
+                    self.ctx.fill_rect(x, y, w, ch);
+                } else {
+                    // First row: from sc to end of line.
+                    let first_y = sr_v as f64 * ch;
+                    let first_x = sc as f64 * cw;
+                    self.ctx.fill_rect(first_x, first_y, canvas_w_px - first_x, ch);
+                    // Middle rows: full width.
+                    for r in (sr_v + 1)..er_v {
+                        if r < 0 || r >= screen_lines as i32 {
+                            continue;
+                        }
+                        self.ctx.fill_rect(0.0, r as f64 * ch, canvas_w_px, ch);
+                    }
+                    // Last row: from col 0 to ec inclusive.
+                    if er_v >= 0 && er_v < screen_lines as i32 {
+                        let last_y = er_v as f64 * ch;
+                        let last_w = ((ec + 1) as f64) * cw;
+                        self.ctx.fill_rect(0.0, last_y, last_w, ch);
+                    }
+                }
+            }
+            // Raw string bypasses apply_fill cache.
+            self.current_fill.set(None);
+        }
+
         // Bell overlay: a translucent white wash over the whole canvas. Drawn
         // last so it dims everything. Peak alpha kept modest (0.35) so the
         // flash is noticeable but not retina-searing; the render loop decays
@@ -850,6 +915,12 @@ impl TerminalRenderer for Canvas2dRenderer {
 
     fn set_bell_intensity(&mut self, intensity: f32) {
         self.bell_intensity = intensity.clamp(0.0, 1.0);
+    }
+
+    fn set_search_highlights(&mut self, ranges: &[i32], current_index: i32) {
+        self.search_highlights.clear();
+        self.search_highlights.extend_from_slice(ranges);
+        self.current_match_index = current_index;
     }
 
     fn backend_name(&self) -> &'static str {
