@@ -7,6 +7,8 @@ use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config as TermConfig, TermMode};
 use alacritty_terminal::Term;
+use alacritty_terminal::index::Direction;
+use alacritty_terminal::term::search::RegexSearch;
 use alacritty_terminal::vte::ansi;
 use alacritty_terminal::vte::ansi::Rgb;
 
@@ -221,6 +223,9 @@ pub struct WebTerminal {
     term: Rc<FairMutex<Term<WebEventProxy>>>,
     parser: ansi::Processor,
     event_proxy: WebEventProxy,
+    /// Compiled regex from the last `set_search_pattern`. Kept on the
+    /// terminal so `search_next` reuses it across calls.
+    search_regex: Option<RegexSearch>,
 }
 
 impl WebTerminal {
@@ -239,6 +244,7 @@ impl WebTerminal {
             term,
             parser: ansi::Processor::new(),
             event_proxy,
+            search_regex: None,
         }
     }
 
@@ -384,6 +390,59 @@ impl WebTerminal {
         }
         let point = Point::new(Line(line_index), Column(column));
         term.grid()[point].hyperlink().map(|h| h.uri().to_string())
+    }
+
+    /// Compile a search regex. Returns true on success, false on a parse
+    /// error (caller can use that to surface a UI hint). Subsequent
+    /// `search_next` calls use this pattern. Passing an empty string
+    /// clears the active pattern.
+    pub fn set_search_pattern(&mut self, pattern: &str) -> bool {
+        if pattern.is_empty() {
+            self.search_regex = None;
+            return true;
+        }
+        match RegexSearch::new(pattern) {
+            Ok(rx) => {
+                self.search_regex = Some(rx);
+                true
+            },
+            Err(_) => false,
+        }
+    }
+
+    /// Whether there's an active compiled search pattern.
+    pub fn has_search_pattern(&self) -> bool {
+        self.search_regex.is_some()
+    }
+
+    /// Find the next match of the active pattern starting from the given
+    /// viewport cell. Returns `[start_row, start_col, end_row, end_col]`
+    /// in viewport coordinates, or `None` if no match (or no pattern set).
+    /// `forward = false` searches backward.
+    pub fn search_next(
+        &mut self,
+        viewport_row: i32,
+        column: u32,
+        forward: bool,
+    ) -> Option<Vec<i32>> {
+        let regex = self.search_regex.as_mut()?;
+        let term = self.term.lock();
+        let display_offset = term.grid().display_offset() as i32;
+        let line = Line(viewport_row - display_offset);
+        let cols = term.columns();
+        let col = Column((column as usize).min(cols.saturating_sub(1)));
+        let origin = Point::new(line, col);
+        let direction = if forward { Direction::Right } else { Direction::Left };
+        let side = if forward { Side::Right } else { Side::Left };
+        let m = term.search_next(regex, origin, direction, side, None)?;
+        let start = m.start();
+        let end = m.end();
+        Some(vec![
+            start.line.0 + display_offset,
+            start.column.0 as i32,
+            end.line.0 + display_offset,
+            end.column.0 as i32,
+        ])
     }
 
     /// Concatenated text of the cells on the given viewport row, with

@@ -594,6 +594,31 @@ impl AlacrittyTerminal {
         app.terminal.line_text(row)
     }
 
+    /// Compile a search pattern. `true` on success; `false` on regex parse
+    /// error. Empty `pattern` clears the active search. Subsequent
+    /// `search_next` calls use this compiled regex.
+    pub fn set_search_pattern(&self, pattern: &str) -> bool {
+        let Ok(mut app) = self.state.try_borrow_mut() else { return false };
+        app.terminal.set_search_pattern(pattern)
+    }
+
+    /// Whether a search pattern is currently compiled.
+    pub fn has_search_pattern(&self) -> bool {
+        self.state
+            .try_borrow()
+            .map(|a| a.terminal.has_search_pattern())
+            .unwrap_or(false)
+    }
+
+    /// Find the next match of the active pattern from `(row, column)`.
+    /// `forward = false` searches backward. Returns
+    /// `[start_row, start_col, end_row, end_col]` in viewport coords, or
+    /// `None` if no pattern is set or no match was found.
+    pub fn search_next(&self, row: i32, column: u32, forward: bool) -> Option<Vec<i32>> {
+        let mut app = self.state.try_borrow_mut().ok()?;
+        app.terminal.search_next(row, column, forward)
+    }
+
     /// Latest OSC 0/2 window title the shell pushed, or `None` if never set.
     /// JS typically polls this on a low-frequency interval and mirrors it
     /// into `document.title`. Polling (vs. callbacks) keeps the JS↔WASM

@@ -126,6 +126,30 @@ fn bracketed_paste_flag_tracks_decset_2004() {
 }
 
 #[test]
+fn search_finds_pattern_forward_and_backward() {
+    let mut t = WebTerminal::new(40, 4);
+    t.process_bytes(b"alpha beta gamma\r\ndelta epsilon");
+    assert!(t.set_search_pattern("gamma"), "literal pattern compiles");
+    assert!(t.has_search_pattern());
+    // Forward from origin: gamma starts at (line 0, col 11).
+    let hit = t.search_next(0, 0, true).expect("should find gamma");
+    assert_eq!(hit[0], 0, "start row");
+    assert_eq!(hit[1], 11, "start col");
+    assert_eq!(hit[2], 0, "end row");
+    assert_eq!(hit[3], 15, "end col (inclusive on g..a)");
+    // Backward from end of line 1: should still hit gamma on line 0.
+    let back = t.search_next(1, 20, false).expect("backward search finds gamma");
+    assert_eq!(back[0], 0);
+    assert_eq!(back[1], 11);
+    // Bad pattern: returns false, leaves prior pattern intact.
+    assert!(!t.set_search_pattern("(unclosed"));
+    // Empty pattern clears.
+    assert!(t.set_search_pattern(""));
+    assert!(!t.has_search_pattern());
+    assert!(t.search_next(0, 0, true).is_none());
+}
+
+#[test]
 fn line_text_returns_row_contents_trimmed() {
     let mut t = WebTerminal::new(40, 4);
     t.process_bytes(b"see https://example.com here\r\nnext line  ");
