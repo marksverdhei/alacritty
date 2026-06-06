@@ -61,6 +61,13 @@
 
 	let canvasEl: HTMLCanvasElement;
 	let terminal: any = null;
+	// Search overlay state. Per-instance so multiple terminals on the
+	// same page don't share a query.
+	let searchInput: HTMLInputElement | undefined;
+	let searchOpen = $state(false);
+	let searchPattern = $state('');
+	let searchStatus = $state('');
+	let lastMatch: number[] | null = null;
 	let status = $state<'loading' | 'ready' | 'connected' | 'error'>('loading');
 	let statusMessage = $state('Initializing...');
 	let wsPollHandle: number | null = null;
@@ -94,8 +101,136 @@
 		}
 	}
 
+	// Compute "X of N" + push all matches to the renderer as highlights.
+	// Mirror of /compare's updateMatchCount so production component gets
+	// the same search UX. See $lib/canvas-handlers.ts memory if you're
+	// updating one of these in isolation — the keyboard handler is
+	// per-route by design but the search math should stay in sync.
+	function updateMatchCount() {
+		if (!terminal?.has_search_pattern?.()) {
+			searchStatus = '';
+			terminal?.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
+		const rows = terminal.rows();
+		const all = terminal.all_matches(0, rows - 1) as number[] | null;
+		if (!all) {
+			searchStatus = '';
+			terminal.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
+		const total = all.length / 4;
+		if (total === 0) {
+			searchStatus = 'no match';
+			terminal.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
+		let idx = -1;
+		if (lastMatch) {
+			for (let i = 0; i < total; i++) {
+				const off = i * 4;
+				if (
+					all[off] === lastMatch[0] &&
+					all[off + 1] === lastMatch[1] &&
+					all[off + 2] === lastMatch[2] &&
+					all[off + 3] === lastMatch[3]
+				) { idx = i; break; }
+			}
+		}
+		searchStatus = idx >= 0
+			? `${idx + 1} of ${total}`
+			: `${total} match${total === 1 ? '' : 'es'}`;
+		terminal.set_search_highlights?.(new Int32Array(all), idx);
+	}
+
+	function applyHit(hit: number[] | null): boolean {
+		if (!hit) {
+			searchStatus = 'no match';
+			terminal?.set_search_highlights?.(new Int32Array(), -1);
+			lastMatch = null;
+			return false;
+		}
+		lastMatch = hit;
+		terminal.scroll_to_bottom?.();
+		updateMatchCount();
+		return true;
+	}
+
+	function onSearchInput() {
+		if (!terminal) return;
+		const pat = searchPattern;
+		if (!pat) {
+			terminal.set_search_pattern('');
+			terminal.set_search_highlights?.(new Int32Array(), -1);
+			searchStatus = '';
+			lastMatch = null;
+			return;
+		}
+		if (!terminal.set_search_pattern(pat)) {
+			searchStatus = 'invalid regex';
+			terminal.set_search_highlights?.(new Int32Array(), -1);
+			lastMatch = null;
+			return;
+		}
+		applyHit(terminal.search_next(0, 0, true));
+	}
+
+	function searchAdvance(forward: boolean) {
+		if (!terminal?.has_search_pattern?.()) return;
+		const cols = terminal.cols();
+		const rows = terminal.rows();
+		let row: number;
+		let col: number;
+		if (lastMatch) {
+			if (forward) {
+				row = lastMatch[2];
+				col = lastMatch[3] + 1;
+				if (col >= cols) { row += 1; col = 0; }
+			} else {
+				row = lastMatch[0];
+				col = lastMatch[1] - 1;
+				if (col < 0) { row -= 1; col = cols - 1; }
+			}
+		} else {
+			row = forward ? 0 : rows - 1;
+			col = forward ? 0 : cols - 1;
+		}
+		let hit = terminal.search_next(row, col, forward);
+		if (!hit) {
+			const wrapRow = forward ? 0 : rows - 1;
+			const wrapCol = forward ? 0 : cols - 1;
+			hit = terminal.search_next(wrapRow, wrapCol, forward);
+		}
+		applyHit(hit);
+	}
+
+	function onSearchKey(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			searchOpen = false;
+			searchPattern = '';
+			searchStatus = '';
+			lastMatch = null;
+			terminal?.set_search_pattern?.('');
+			terminal?.set_search_highlights?.(new Int32Array(), -1);
+			canvasEl.focus({ preventScroll: true });
+			return;
+		}
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			searchAdvance(!e.shiftKey);
+		}
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (!terminal) return;
+		// Ctrl/Cmd+Shift+F: open the regex search bar.
+		if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+			e.preventDefault();
+			searchOpen = true;
+			queueMicrotask(() => searchInput?.focus());
+			return;
+		}
 		// Ctrl/Cmd+Shift+C: copy the active selection.
 		if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
 			const text = terminal.selection_text?.();
@@ -295,6 +430,32 @@
 		<span class="status-text">{statusMessage}</span>
 	</div>
 	<div class="terminal-canvas-container">
+		{#if searchOpen}
+			<div class="search-bar">
+				<input
+					bind:this={searchInput}
+					bind:value={searchPattern}
+					oninput={onSearchInput}
+					onkeydown={onSearchKey}
+					placeholder="regex search (Enter=next, Shift+Enter=prev, Esc to close)"
+					class="search-input"
+					spellcheck="false"
+				/>
+				<button
+					type="button"
+					class="search-nav"
+					title="Previous match (Shift+Enter)"
+					onclick={() => searchAdvance(false)}
+				>↑</button>
+				<button
+					type="button"
+					class="search-nav"
+					title="Next match (Enter)"
+					onclick={() => searchAdvance(true)}
+				>↓</button>
+				<span class="search-status">{searchStatus}</span>
+			</div>
+		{/if}
 		<canvas
 			bind:this={canvasEl}
 			tabindex="0"
@@ -366,4 +527,59 @@
 		display: block;
 		outline: none;
 	}
+	.search-bar {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 8px;
+		background: #282a2e;
+		border: 1px solid #373b41;
+		border-radius: 4px;
+		z-index: 10;
+	}
+	.theme-light .search-bar {
+		background: #e8e8e8;
+		border-color: #c0c0c0;
+	}
+	.search-input {
+		background: #1d1f21;
+		color: #c5c8c6;
+		border: 1px solid #373b41;
+		border-radius: 3px;
+		padding: 2px 6px;
+		font: 12px ui-monospace, Menlo, monospace;
+		min-width: 200px;
+		outline: none;
+	}
+	.theme-light .search-input {
+		background: #fafafa;
+		color: #383a42;
+		border-color: #c0c0c0;
+	}
+	.search-input:focus { border-color: #5e81ac; }
+	.search-status {
+		font: 11px ui-monospace, Menlo, monospace;
+		color: #969896;
+		min-width: 64px;
+	}
+	.search-nav {
+		background: #1d1f21;
+		color: #c5c8c6;
+		border: 1px solid #373b41;
+		border-radius: 3px;
+		padding: 0 6px;
+		font: 12px ui-monospace, Menlo, monospace;
+		cursor: pointer;
+		min-width: 24px;
+	}
+	.theme-light .search-nav {
+		background: #fafafa;
+		color: #383a42;
+		border-color: #c0c0c0;
+	}
+	.search-nav:hover { border-color: #5e81ac; }
+	.search-nav:active { background: #373b41; }
 </style>
