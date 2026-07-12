@@ -14,7 +14,7 @@
 
 	let xtermEl: HTMLDivElement;
 	let alacrittyCanvas: HTMLCanvasElement;
-	let searchInput: HTMLInputElement | undefined;
+	let searchInput = $state<HTMLInputElement | undefined>(undefined);
 	let searchOpen = $state(false);
 	let searchPattern = $state('');
 	let searchStatus = $state('');

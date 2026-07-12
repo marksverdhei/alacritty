@@ -9,6 +9,8 @@ use clap::Parser;
 use log::{error, info, warn};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::error::ProtocolError;
+use tokio_tungstenite::tungstenite::Error as WebSocketError;
 
 mod protocol;
 mod session;
@@ -184,7 +186,15 @@ async fn main() {
 
                 tokio::spawn(async move {
                     if let Err(e) = session::handle_connection(stream, peer, args).await {
-                        error!("Session error for {}: {}", peer, e);
+                        let is_readiness_probe = matches!(
+                            e.downcast_ref::<WebSocketError>(),
+                            Some(WebSocketError::Protocol(ProtocolError::HandshakeIncomplete))
+                        );
+                        if is_readiness_probe {
+                            log::debug!("TCP probe disconnected before WebSocket upgrade: {}", peer);
+                        } else {
+                            error!("Session error for {}: {}", peer, e);
+                        }
                     }
                     active_sessions.fetch_sub(1, Ordering::SeqCst);
                     info!(

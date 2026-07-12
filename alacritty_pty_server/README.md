@@ -32,7 +32,7 @@ alacritty-pty-server --allowed-origin https://example.com   # CORS allowlist
 | `--bind` | `127.0.0.1` | Interface to listen on. Use `0.0.0.0` to expose. |
 | `--port` | `7681` | TCP port. |
 | `--shell` | `$SHELL` or `/bin/sh` | Shell binary to spawn for each session. |
-| `--token` | _none_ | Shared secret; if set, the client must send it as the first WS message before any PTY traffic. |
+| `--token` | _none_ | Shared secret; if set, the client must send it as the first WS text message before any PTY traffic. |
 | `--max-sessions` | `5` | Concurrent session ceiling. Excess connections rejected. |
 | `--idle-timeout` | `300` (seconds) | Disconnect sessions with no client input for this long. |
 | `--allowed-origin` | _none_ (repeatable) | Allowed `Origin` header values. When unset, only requests with no `Origin` (i.e. same-origin) are accepted. |
@@ -40,7 +40,8 @@ alacritty-pty-server --allowed-origin https://example.com   # CORS allowlist
 
 ## Protocol
 
-Each WebSocket message is binary. The first byte is a tag:
+After optional token authentication, each terminal protocol WebSocket message is
+binary. The first byte is a tag:
 
 | Tag | Direction | Body | Meaning |
 |---|---|---|---|
@@ -48,9 +49,10 @@ Each WebSocket message is binary. The first byte is a tag:
 | `0x01` (RESIZE) | client→server | 4× u16 LE | `cols, rows, cell_w, cell_h`. cols clamped 1..=500, rows clamped 1..=200. |
 | `0x02` (EXIT) | server→client | optional u8 | Child process exited. The byte, if present, is the exit code (0..=255). |
 
-When `--token` is set, the **first** WS message must be a `DATA` frame containing
-the token bytes (and only the token bytes). Subsequent `DATA` frames carry PTY
-input as normal. Server uses constant-time comparison (`subtle` crate).
+When `--token` is set, the **first** WS message must be a text frame containing
+the token string. Subsequent binary `DATA` frames carry PTY input as normal.
+Server uses constant-time comparison (`subtle` crate). The WASM client exposes
+this as `connect_with_token(wsUrl, token)`.
 
 ## Security considerations
 

@@ -11,11 +11,12 @@
 		title = 'terminal',
 		height = '300px',
 		wsUrl = undefined as string | undefined,
+		wsToken = undefined as string | undefined,
 		onTerminalReady = undefined as ((t: any) => void) | undefined,
 		onInput = undefined as ((b: Uint8Array) => void) | undefined,
 	} = $props();
 
-	let resolved: Theme = $state(resolveTheme(themeName));
+	let resolved: Theme = $derived(resolveTheme(themeName));
 </script>
 
 <div class="card" style="--bg: {resolved.background}; --fg: {resolved.foreground}; --border: {resolved.bright_black}; --accent: {resolved.blue};">
@@ -28,9 +29,9 @@
 		<AlacrittyTerminal
 			{themeName}
 			{wsUrl}
+			{wsToken}
 			{onTerminalReady}
 			{onInput}
-			onThemeResolved={(t) => (resolved = t)}
 		/>
 	</div>
 </div>

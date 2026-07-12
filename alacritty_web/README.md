@@ -50,6 +50,10 @@ term.feed(new TextEncoder().encode('hello \x1b[1mworld\x1b[0m\r\n'));
 term.connect('ws://localhost:7681');
 term.write(new TextEncoder().encode('ls\r'));
 
+// If the PTY server was started with `--token`, use this instead of connect()
+// so authentication happens before any binary terminal protocol frames.
+term.connect_with_token('ws://localhost:7681', token);
+
 // ...or skip connect() and route bytes yourself through term.feed() +
 // your own transport (the /compare demo page does this so it can tee
 // the same shell into two terminals).
@@ -74,6 +78,7 @@ on the instance:
 | Method | Notes |
 |---|---|
 | `connect(wsUrl)` | Open an internal WebSocket. Drains incoming PTY bytes through `feed()` and routes `write()` outbound. Skip if you own the transport. |
+| `connect_with_token(wsUrl, token)` | Same as `connect`, but sends the PTY server's `--token` value as the first WS text message before resize/input frames. |
 | `disconnect()` | Close the internal WebSocket. |
 | `ws_ready_state()` | `-1` if no socket, otherwise the WS `readyState`. |
 | `dispose()` | Drop the instance. |
@@ -152,9 +157,9 @@ on the instance:
 | APP_CURSOR (DECCKM) arrow encoding | ✅ SS3 form |
 | Scrollback | ✅ |
 | Vi mode | ❌ |
-| Regex search | ❌ |
-| URL hint mode (auto-detect URLs in plain text) | ❌ (OSC 8 covers most cases) |
-| Kitty keyboard protocol (CSI u) | ❌ |
+| Regex search | ✅ exposed via `set_search_pattern`, `search_next`, `all_matches`, and renderer highlights |
+| URL hint mode (auto-detect URLs in plain text) | ✅ conservative `http(s)`, `file`, and `mailto` detection in JS wiring |
+| Kitty keyboard protocol (CSI u) | ✅ DISAMBIGUATE_ESC_CODES support |
 | Sixel / Kitty graphics | ❌ (native doesn't either) |
 
 ## Tests

@@ -13,12 +13,16 @@
 		activeIndex = 0,
 		height = '320px',
 		wsUrl = undefined as string | undefined,
+		wsToken = undefined as string | undefined,
 		onTerminalReady = undefined as ((t: any) => void) | undefined,
 		onInput = undefined as ((b: Uint8Array) => void) | undefined,
 	} = $props();
 
-	let resolved: Theme = $state(resolveTheme(themeName));
-	let active = $state(activeIndex);
+	let resolved: Theme = $derived(resolveTheme(themeName));
+	let active = $state(0);
+	$effect(() => {
+		active = activeIndex;
+	});
 </script>
 
 <div class="tabbed" style="--bg: {resolved.background}; --fg: {resolved.foreground}; --border: {resolved.bright_black}; --accent: {resolved.blue};">
@@ -36,9 +40,9 @@
 		<AlacrittyTerminal
 			{themeName}
 			{wsUrl}
+			{wsToken}
 			{onTerminalReady}
 			{onInput}
-			onThemeResolved={(t) => (resolved = t)}
 		/>
 	</div>
 </div>

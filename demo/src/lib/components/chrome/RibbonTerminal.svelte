@@ -13,11 +13,12 @@
 		height = '320px',
 		mode = 'NORMAL',
 		wsUrl = undefined as string | undefined,
+		wsToken = undefined as string | undefined,
 		onTerminalReady = undefined as ((t: any) => void) | undefined,
 		onInput = undefined as ((b: Uint8Array) => void) | undefined,
 	} = $props();
 
-	let resolved: Theme = $state(resolveTheme(themeName));
+	let resolved: Theme = $derived(resolveTheme(themeName));
 	let now = $state(new Date());
 	if (typeof window !== 'undefined') {
 		setInterval(() => (now = new Date()), 60_000);
@@ -35,9 +36,9 @@
 		<AlacrittyTerminal
 			{themeName}
 			{wsUrl}
+			{wsToken}
 			{onTerminalReady}
 			{onInput}
-			onThemeResolved={(t) => (resolved = t)}
 		/>
 	</div>
 	<div class="footer" style="background: {resolved.bright_black};">

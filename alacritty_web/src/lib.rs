@@ -140,6 +140,17 @@ impl AlacrittyTerminal {
         Ok(())
     }
 
+    /// Connect to a WebSocket PTY server that requires `--token` auth.
+    ///
+    /// The PTY server expects the token as the first WebSocket text message,
+    /// before any binary protocol frames. Pending resizes and writes stay
+    /// queued behind this auth message until the socket opens.
+    pub fn connect_with_token(&mut self, ws_url: &str, token: &str) -> Result<(), JsError> {
+        let ws = websocket::WsConnection::new_with_token(ws_url, token)?;
+        self.state.borrow_mut().ws = Some(ws);
+        Ok(())
+    }
+
     /// Disconnect from the PTY server.
     pub fn disconnect(&mut self) {
         self.state.borrow_mut().ws = None;

@@ -7,6 +7,7 @@
 
 	interface Props {
 		wsUrl?: string;
+		wsToken?: string;
 		fontSize?: number;
 		fontFamily?: string;
 		theme?: 'dark' | 'light';
@@ -45,6 +46,7 @@
 
 	let {
 		wsUrl = undefined,
+		wsToken = undefined,
 		fontSize = 14,
 		// Default to fonts without contextual ligatures so cell advance is
 		// uniform — Fira Code's ligatures make alignment jitter visible.
@@ -63,7 +65,7 @@
 	let terminal: any = null;
 	// Search overlay state. Per-instance so multiple terminals on the
 	// same page don't share a query.
-	let searchInput: HTMLInputElement | undefined;
+	let searchInput = $state<HTMLInputElement | undefined>(undefined);
 	let searchOpen = $state(false);
 	let searchPattern = $state('');
 	let searchStatus = $state('');
@@ -337,7 +339,11 @@
 			// flipping to "connected" before the socket has actually opened.
 			if (wsUrl) {
 				try {
-					terminal.connect(wsUrl);
+					if (wsToken) {
+						terminal.connect_with_token(wsUrl, wsToken);
+					} else {
+						terminal.connect(wsUrl);
+					}
 					status = 'loading';
 					statusMessage = `Connecting to ${wsUrl}…`;
 					wsPollHandle = window.setInterval(() => {

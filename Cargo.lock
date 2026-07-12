@@ -100,6 +100,7 @@ dependencies = [
  "clap",
  "env_logger",
  "futures-util",
+ "libc",
  "log",
  "portable-pty",
  "subtle",

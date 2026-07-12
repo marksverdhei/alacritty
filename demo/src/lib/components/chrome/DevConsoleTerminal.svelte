@@ -13,12 +13,16 @@
 		height = '320px',
 		onClear = undefined as (() => void) | undefined,
 		wsUrl = undefined as string | undefined,
+		wsToken = undefined as string | undefined,
 		onTerminalReady = undefined as ((t: any) => void) | undefined,
 		onInput = undefined as ((b: Uint8Array) => void) | undefined,
 	} = $props();
 
-	let resolved: Theme = $state(resolveTheme(themeName));
-	let level = $state(activeLevel);
+	let resolved: Theme = $derived(resolveTheme(themeName));
+	let level = $state('all');
+	$effect(() => {
+		level = activeLevel;
+	});
 </script>
 
 <div class="dev" style="--bg: {resolved.background}; --fg: {resolved.foreground}; --border: {resolved.bright_black}; --accent: {resolved.blue}; --warn: {resolved.yellow}; --err: {resolved.red};">
@@ -40,9 +44,9 @@
 		<AlacrittyTerminal
 			{themeName}
 			{wsUrl}
+			{wsToken}
 			{onTerminalReady}
 			{onInput}
-			onThemeResolved={(t) => (resolved = t)}
 		/>
 	</div>
 </div>

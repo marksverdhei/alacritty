@@ -16,6 +16,18 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 use crate::Args;
 use crate::protocol::{self, ClientMessage};
 
+fn process_already_exited(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        return true;
+    }
+
+    #[cfg(unix)]
+    return error.raw_os_error() == Some(libc::ESRCH);
+
+    #[cfg(not(unix))]
+    false
+}
+
 /// Handle a single TCP connection: upgrade to WebSocket, optionally authenticate,
 /// spawn a PTY, and bridge I/O.
 // The `accept_hdr_async` callback returns Result<Response, ErrorResponse>;
@@ -184,7 +196,16 @@ pub async fn handle_connection(
             }
         }
         if let Err(e) = ws_sink.close().await {
-            warn!("Failed to close WebSocket sink: {}", e);
+            let peer_reset = matches!(
+                &e,
+                tokio_tungstenite::tungstenite::Error::Io(io_error)
+                    if io_error.kind() == std::io::ErrorKind::ConnectionReset
+            );
+            if peer_reset {
+                log::debug!("Peer reset WebSocket before close handshake");
+            } else {
+                warn!("Failed to close WebSocket sink: {}", e);
+            }
         }
     });
 
@@ -332,8 +353,11 @@ pub async fn handle_connection(
             // Kill the child process if still running.
             if let Ok(mut child_guard) = child.lock() {
                 if let Err(e) = child_guard.kill() {
-                    // ESRCH (no such process) is expected if already exited.
-                    warn!("Failed to kill child process: {}", e);
+                    if process_already_exited(&e) {
+                        log::debug!("Child process for {} already exited", peer);
+                    } else {
+                        warn!("Failed to kill child process: {}", e);
+                    }
                 } else {
                     info!("Killed child process for disconnected client {}", peer);
                 }
