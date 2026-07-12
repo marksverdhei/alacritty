@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import '@xterm/xterm/css/xterm.css';
 	import { mapKeyToBytes } from '$lib/key-mapping';
+	import { wireTerminalCanvas } from '$lib/canvas-handlers';
 	import { loadAlacrittyConfig, applyAlacrittyConfig, type AlacrittyConfig } from '$lib/alacritty-config';
 
 	// Same PTY stream fed into xterm.js on the left and alacritty-wasm on the right.
@@ -13,6 +14,13 @@
 
 	let xtermEl: HTMLDivElement;
 	let alacrittyCanvas: HTMLCanvasElement;
+	let searchInput = $state<HTMLInputElement | undefined>(undefined);
+	let searchOpen = $state(false);
+	let searchPattern = $state('');
+	let searchStatus = $state('');
+	// Last match we selected, as [startRow, startCol, endRow, endCol] in
+	// viewport coords. Used as the origin for next/prev navigation.
+	let lastMatch: number[] | null = null;
 
 	let xtermTerm: any = null;
 	let xtermFit: any = null;
@@ -89,8 +97,7 @@
 	// Handlers + disposables hoisted to module scope so onDestroy can clean
 	// up properly. Each is initialised inside onMount once the wasm + xterm
 	// instances exist.
-	let onWindowMouseMove: ((e: MouseEvent) => void) | null = null;
-	let onWindowMouseUp: ((e: MouseEvent) => void) | null = null;
+	let unwireCanvas: (() => void) | null = null;
 	let xtermScrollSub: { dispose(): void } | null = null;
 	let resizeObserver: ResizeObserver | null = null;
 
@@ -269,6 +276,141 @@
 		}
 	}
 
+	// Recompute "X of N" against the current viewport, and push all
+	// matches as render-time highlights so they're visible at a glance
+	// (the current match is drawn more prominently). Cheap to call after
+	// every nav step; if scrollback-wide enumeration ever shows up in
+	// timing, we can scope to the visible area then.
+	function updateMatchCount() {
+		if (!alacritty?.has_search_pattern?.()) {
+			searchStatus = '';
+			alacritty?.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
+		const rows = alacritty.rows();
+		const all = alacritty.all_matches(0, rows - 1) as number[] | null;
+		if (!all) {
+			searchStatus = '';
+			alacritty.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
+		const total = all.length / 4;
+		if (total === 0) {
+			searchStatus = 'no match';
+			alacritty.set_search_highlights?.(new Int32Array(), -1);
+			return;
+		}
+		// Find the index of lastMatch in the enumerated list.
+		let idx = -1;
+		if (lastMatch) {
+			for (let i = 0; i < total; i++) {
+				const off = i * 4;
+				if (
+					all[off] === lastMatch[0] &&
+					all[off + 1] === lastMatch[1] &&
+					all[off + 2] === lastMatch[2] &&
+					all[off + 3] === lastMatch[3]
+				) { idx = i; break; }
+			}
+		}
+		searchStatus = idx >= 0
+			? `${idx + 1} of ${total}`
+			: `${total} match${total === 1 ? '' : 'es'}`;
+		// Push as Int32Array — wasm-bindgen `Vec<i32>` parameter accepts
+		// typed arrays without a copy at the boundary.
+		alacritty.set_search_highlights?.(new Int32Array(all), idx);
+	}
+
+	// Visualise a search hit by recording it; highlights are drawn by
+	// the renderer via set_search_highlights, NOT by selection (so the
+	// user's own text selection isn't clobbered).
+	function applyHit(hit: number[] | null): boolean {
+		if (!hit) {
+			searchStatus = 'no match';
+			alacritty?.set_search_highlights?.(new Int32Array(), -1);
+			lastMatch = null;
+			return false;
+		}
+		lastMatch = hit;
+		alacritty.scroll_to_bottom?.();
+		updateMatchCount();
+		return true;
+	}
+
+	function onSearchInput() {
+		if (!alacritty) return;
+		const pat = searchPattern;
+		if (!pat) {
+			alacritty.set_search_pattern('');
+			alacritty.selection_clear?.();
+			searchStatus = '';
+			lastMatch = null;
+			return;
+		}
+		const ok = alacritty.set_search_pattern(pat);
+		if (!ok) {
+			searchStatus = 'invalid regex';
+			alacritty.selection_clear?.();
+			lastMatch = null;
+			return;
+		}
+		applyHit(alacritty.search_next(0, 0, true));
+	}
+
+	// Step to the next (forward=true) or previous match. Searches from one
+	// cell past the current match in the requested direction; if no match
+	// is found, wraps to the opposite edge of the grid and retries once
+	// so the user can cycle through matches with repeated Enter/Shift+Enter.
+	function searchAdvance(forward: boolean) {
+		if (!alacritty || !alacritty.has_search_pattern?.()) return;
+		const cols = alacritty.cols();
+		const rows = alacritty.rows();
+		let row: number;
+		let col: number;
+		if (lastMatch) {
+			if (forward) {
+				// Step one cell past the match end.
+				row = lastMatch[2];
+				col = lastMatch[3] + 1;
+				if (col >= cols) { row += 1; col = 0; }
+			} else {
+				row = lastMatch[0];
+				col = lastMatch[1] - 1;
+				if (col < 0) { row -= 1; col = cols - 1; }
+			}
+		} else {
+			row = forward ? 0 : rows - 1;
+			col = forward ? 0 : cols - 1;
+		}
+		let hit = alacritty.search_next(row, col, forward);
+		if (!hit) {
+			// Wrap.
+			const wrapRow = forward ? 0 : rows - 1;
+			const wrapCol = forward ? 0 : cols - 1;
+			hit = alacritty.search_next(wrapRow, wrapCol, forward);
+		}
+		applyHit(hit);
+	}
+
+	function onSearchKey(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			searchOpen = false;
+			searchPattern = '';
+			searchStatus = '';
+			lastMatch = null;
+			alacritty?.set_search_pattern?.('');
+			alacritty?.set_search_highlights?.(new Int32Array(), -1);
+			alacrittyCanvas.focus({ preventScroll: true });
+			return;
+		}
+		// Enter → next match, Shift+Enter → previous.
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			searchAdvance(!e.shiftKey);
+		}
+	}
+
 	function sendInput(bytes: Uint8Array) {
 		if (!ws || ws.readyState !== WebSocket.OPEN) return;
 		const framed = new Uint8Array(1 + bytes.length);
@@ -340,6 +482,13 @@
 		// Forward keystrokes from the alacritty canvas (it's the focused one more often
 		// since xterm.js captures its own keystrokes via its internal textarea).
 		alacrittyCanvas.addEventListener('keydown', (e) => {
+			// Ctrl/Cmd+Shift+F: open the regex search bar (alacritty default).
+			if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+				e.preventDefault();
+				searchOpen = true;
+				queueMicrotask(() => searchInput?.focus());
+				return;
+			}
 			// Ctrl/Cmd+Shift+C: copy selection.
 			if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
 				const text = alacritty.selection_text?.();
@@ -359,11 +508,22 @@
 				e.preventDefault();
 				navigator.clipboard?.readText().then((text) => {
 					if (!text) return;
-					sendInput(new TextEncoder().encode(text));
+					const enc = new TextEncoder();
+					// When the shell asked for bracketed paste (DECSET 2004),
+					// wrap so it can distinguish typed from pasted bytes —
+					// vim uses this to disable auto-indent on pastes.
+					if (alacritty.bracketed_paste?.()) {
+						sendInput(enc.encode('\x1b[200~'));
+						sendInput(enc.encode(text));
+						sendInput(enc.encode('\x1b[201~'));
+					} else {
+						sendInput(enc.encode(text));
+					}
 				}).catch(() => {});
 				return;
 			}
-			const bytes = mapKeyToBytes(e);
+			const modes = alacritty.keyboard_mode_bits?.() ?? 0;
+			const bytes = mapKeyToBytes(e, modes);
 			if (bytes) {
 				e.preventDefault();
 				alacritty.scroll_to_bottom();
@@ -371,93 +531,40 @@
 			}
 		});
 
-		// Focus tracking: drives the solid-vs-hollow cursor on the wasm side.
-		alacrittyCanvas.addEventListener('focus', () => alacritty.set_focused(true));
-		alacrittyCanvas.addEventListener('blur', () => alacritty.set_focused(false));
+		// Focus tracking: drives the solid-vs-hollow cursor on the wasm side,
+		// and forwards `\e[I` / `\e[O` when the shell enabled DECSET 1004
+		// (focus reporting — tmux and neovim consume these to keep their
+		// own focus state in sync with the host window).
 		alacritty.set_focused(document.activeElement === alacrittyCanvas);
 
 		// Sync-scroll: wheel events on either pane move both viewports so the
-		// side-by-side comparison stays honest.
+		// side-by-side comparison stays honest. Pass scrollBoth as the wheel
+		// handler's scroll-out so the shared helper drives both panes.
 		const scrollBoth = (lineDelta: number) => {
 			if (lineDelta === 0) return;
-			// alacritty: positive delta = up into scrollback.
 			alacritty.scroll(lineDelta);
 			// xterm.js exposes scrollLines(n) where positive n scrolls DOWN
 			// towards newer output, which is the opposite sign.
 			try { xtermTerm.scrollLines(-lineDelta); } catch {}
 		};
-		alacrittyCanvas.addEventListener('wheel', (e) => {
-			if (!alacritty) return;
-			const lineHeight = alacritty.cell_height() || 16;
-			const lines = e.deltaMode === 1 ? e.deltaY : e.deltaY / lineHeight;
-			const delta = -Math.round(lines * 3);
-			if (delta === 0) return;
-			e.preventDefault();
-			scrollBoth(delta);
-		}, { passive: false });
 		// xterm.js consumes wheel events internally; hook onScroll to mirror
-		// its viewport into alacritty. We compute the delta between the last
-		// observed xterm scroll position and the new one. Hold on to the
-		// disposable so onDestroy can detach it.
+		// its viewport into alacritty.
 		let lastXtermYDisp = xtermTerm.buffer.active.viewportY;
 		xtermScrollSub = xtermTerm.onScroll(() => {
 			const yDisp = xtermTerm.buffer.active.viewportY;
 			const diff = yDisp - lastXtermYDisp;
 			lastXtermYDisp = yDisp;
 			if (diff === 0) return;
-			// diff > 0: xterm scrolled DOWN (newer), alacritty should scroll
-			// towards bottom too, which is a negative `alacritty.scroll` delta.
 			alacritty.scroll(-diff);
 		});
 
-		// Mouse text selection on the alacritty pane. Drag to select, then
-		// copy-on-selection matches Alacritty's native default.
-		let dragging = false;
-		const cellAt = (e: MouseEvent) => {
-			const cellW = alacritty.cell_width();
-			const cellH = alacritty.cell_height();
-			if (cellW <= 0 || cellH <= 0) return null;
-			const rect = alacrittyCanvas.getBoundingClientRect();
-			const x = e.clientX - rect.left;
-			const y = e.clientY - rect.top;
-			const col = Math.max(0, Math.min(alacritty.cols() - 1, Math.floor(x / cellW)));
-			const row = Math.max(0, Math.min(alacritty.rows() - 1, Math.floor(y / cellH)));
-			return { row, col, sideLeft: (x - col * cellW) < cellW / 2 };
-		};
-		alacrittyCanvas.addEventListener('mousedown', (e) => {
-			if (e.button !== 0) return;
-			const c = cellAt(e);
-			if (!c) return;
-			if (e.detail >= 3) {
-				alacritty.selection_line(c.row, c.col);
-				const t = alacritty.selection_text();
-				if (t) navigator.clipboard?.writeText(t).catch(() => {});
-				dragging = false;
-			} else if (e.detail === 2) {
-				alacritty.selection_word(c.row, c.col);
-				const t = alacritty.selection_text();
-				if (t) navigator.clipboard?.writeText(t).catch(() => {});
-				dragging = false;
-			} else {
-				alacritty.selection_start(c.row, c.col, c.sideLeft);
-				dragging = true;
-			}
-			alacrittyCanvas.focus();
+		// All mouse / wheel / focus / contextmenu handling lives in the shared
+		// helper (see $lib/canvas-handlers.ts) so we don't drift from the /
+		// route's behaviour. onScrollDelta routes wheels through scrollBoth.
+		unwireCanvas = wireTerminalCanvas(alacrittyCanvas, alacritty, {
+			sendInput,
+			onScrollDelta: scrollBoth,
 		});
-		onWindowMouseMove = (e: MouseEvent) => {
-			if (!dragging) return;
-			const c = cellAt(e);
-			if (!c) return;
-			alacritty.selection_update(c.row, c.col, c.sideLeft);
-		};
-		onWindowMouseUp = () => {
-			if (!dragging) return;
-			dragging = false;
-			const text = alacritty.selection_text();
-			if (text) navigator.clipboard?.writeText(text).catch(() => {});
-		};
-		window.addEventListener('mousemove', onWindowMouseMove);
-		window.addEventListener('mouseup', onWindowMouseUp);
 
 		// Sync grid size on both terminals to whichever is visually smaller,
 		// so the server sees one consistent size.
@@ -518,8 +625,7 @@
 	});
 
 	onDestroy(() => {
-		if (onWindowMouseMove) window.removeEventListener('mousemove', onWindowMouseMove);
-		if (onWindowMouseUp) window.removeEventListener('mouseup', onWindowMouseUp);
+		unwireCanvas?.();
 		try { xtermScrollSub?.dispose(); } catch {}
 		try { resizeObserver?.disconnect(); } catch {}
 		try { ws?.close(); } catch {}
@@ -626,6 +732,32 @@
 				<span class="meta">Rust → wasm32 → Canvas2D</span>
 			</div>
 			<div class="pane-body">
+				{#if searchOpen}
+					<div class="search-bar">
+						<input
+							bind:this={searchInput}
+							bind:value={searchPattern}
+							oninput={onSearchInput}
+							onkeydown={onSearchKey}
+							placeholder="regex search (Enter=next, Shift+Enter=prev, Esc to close)"
+							class="search-input"
+							spellcheck="false"
+						/>
+						<button
+							type="button"
+							class="search-nav"
+							title="Previous match (Shift+Enter)"
+							onclick={() => searchAdvance(false)}
+						>↑</button>
+						<button
+							type="button"
+							class="search-nav"
+							title="Next match (Enter)"
+							onclick={() => searchAdvance(true)}
+						>↓</button>
+						<span class="search-status">{searchStatus}</span>
+					</div>
+				{/if}
 				<canvas
 					bind:this={alacrittyCanvas}
 					tabindex="0"
@@ -798,6 +930,7 @@
 		height: 560px;
 		padding: 6px;
 		background: #1d1f21;
+		position: relative;
 	}
 	.xterm-host {
 		width: 100%;
@@ -808,5 +941,52 @@
 		height: 100%;
 		display: block;
 		outline: none;
+	}
+	.search-bar {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 8px;
+		background: #282a2e;
+		border: 1px solid #373b41;
+		border-radius: 4px;
+		z-index: 10;
+	}
+	.search-input {
+		background: #1d1f21;
+		color: #c5c8c6;
+		border: 1px solid #373b41;
+		border-radius: 3px;
+		padding: 2px 6px;
+		font: 12px ui-monospace, Menlo, monospace;
+		min-width: 200px;
+		outline: none;
+	}
+	.search-input:focus {
+		border-color: #5e81ac;
+	}
+	.search-status {
+		font: 11px ui-monospace, Menlo, monospace;
+		color: #969896;
+		min-width: 64px;
+	}
+	.search-nav {
+		background: #1d1f21;
+		color: #c5c8c6;
+		border: 1px solid #373b41;
+		border-radius: 3px;
+		padding: 0 6px;
+		font: 12px ui-monospace, Menlo, monospace;
+		cursor: pointer;
+		min-width: 24px;
+	}
+	.search-nav:hover {
+		border-color: #5e81ac;
+	}
+	.search-nav:active {
+		background: #373b41;
 	}
 </style>

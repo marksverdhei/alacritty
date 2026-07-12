@@ -12,12 +12,16 @@
 		activeEntry = 'shell',
 		height = '320px',
 		wsUrl = undefined as string | undefined,
+		wsToken = undefined as string | undefined,
 		onTerminalReady = undefined as ((t: any) => void) | undefined,
 		onInput = undefined as ((b: Uint8Array) => void) | undefined,
 	} = $props();
 
-	let resolved: Theme = $state(resolveTheme(themeName));
-	let active = $state(activeEntry);
+	let resolved: Theme = $derived(resolveTheme(themeName));
+	let active = $state('shell');
+	$effect(() => {
+		active = activeEntry;
+	});
 </script>
 
 <div class="side" style="--bg: {resolved.background}; --fg: {resolved.foreground}; --rail: {resolved.bright_black}; --accent: {resolved.cyan};">
@@ -33,9 +37,9 @@
 		<AlacrittyTerminal
 			{themeName}
 			{wsUrl}
+			{wsToken}
 			{onTerminalReady}
 			{onInput}
-			onThemeResolved={(t) => (resolved = t)}
 		/>
 	</div>
 </div>

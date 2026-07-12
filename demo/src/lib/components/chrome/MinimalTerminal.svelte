@@ -10,20 +10,21 @@
 		themeName = 'catppuccin-mocha',
 		height = '260px',
 		wsUrl = undefined as string | undefined,
+		wsToken = undefined as string | undefined,
 		onTerminalReady = undefined as ((t: any) => void) | undefined,
 		onInput = undefined as ((b: Uint8Array) => void) | undefined,
 	} = $props();
 
-	let resolved: Theme = $state(resolveTheme(themeName));
+	let resolved: Theme = $derived(resolveTheme(themeName));
 </script>
 
 <div class="minimal" style="height: {height}; background: {resolved.background}; border-color: {resolved.bright_black};">
 	<AlacrittyTerminal
 		{themeName}
 		{wsUrl}
+		{wsToken}
 		{onTerminalReady}
 		{onInput}
-		onThemeResolved={(t) => (resolved = t)}
 	/>
 </div>
 

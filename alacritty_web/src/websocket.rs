@@ -12,6 +12,11 @@ use web_sys::WebSocket;
 const MSG_PTY_DATA: u8 = 0x00;
 const MSG_RESIZE: u8 = 0x01;
 
+enum PendingMessage {
+    Binary(Vec<u8>),
+    Text(String),
+}
+
 /// WebSocket connection to the PTY server.
 ///
 /// All event handlers are pure JavaScript (via js_sys::Function / eval),
@@ -21,7 +26,7 @@ pub struct WsConnection {
     /// Incoming data queue, filled by JS onmessage handler, drained by WASM.
     incoming: Rc<js_sys::Array>,
     /// Outgoing messages queued before the connection was open.
-    pending: Vec<Vec<u8>>,
+    pending: Vec<PendingMessage>,
     /// Whether we've already flushed pending messages after open.
     flushed: bool,
 }
@@ -42,6 +47,12 @@ impl WsConnection {
             pending: Vec::new(),
             flushed: false,
         })
+    }
+
+    pub fn new_with_token(url: &str, token: &str) -> Result<Self, JsError> {
+        let mut conn = Self::new(url)?;
+        conn.send_or_queue_text(token.to_string());
+        Ok(conn)
     }
 
     fn setup_js_handlers(ws: &WebSocket, incoming: &js_sys::Array) -> Result<(), JsError> {
@@ -117,7 +128,11 @@ impl WsConnection {
         }
         self.flushed = true;
         for msg in self.pending.drain(..) {
-            if let Err(e) = self.ws.send_with_u8_array(&msg) {
+            let result = match msg {
+                PendingMessage::Binary(bytes) => self.ws.send_with_u8_array(&bytes),
+                PendingMessage::Text(text) => self.ws.send_with_str(&text),
+            };
+            if let Err(e) = result {
                 log::error!("WebSocket send error while flushing: {e:?}");
             }
         }
@@ -130,7 +145,18 @@ impl WsConnection {
                 log::error!("WebSocket send error: {e:?}");
             }
         } else {
-            self.pending.push(msg);
+            self.pending.push(PendingMessage::Binary(msg));
+        }
+    }
+
+    /// Send or queue a raw text message.
+    fn send_or_queue_text(&mut self, msg: String) {
+        if self.is_open() {
+            if let Err(e) = self.ws.send_with_str(&msg) {
+                log::error!("WebSocket text send error: {e:?}");
+            }
+        } else {
+            self.pending.push(PendingMessage::Text(msg));
         }
     }
 
