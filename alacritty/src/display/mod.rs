@@ -1169,6 +1169,8 @@ impl Display {
 
         let glyph_cache = &mut self.glyph_cache;
         let metrics = glyph_cache.font_metrics();
+        let preedit_colors = config.colors.preedit;
+        let fg = preedit_colors.foreground.unwrap_or(fg);
 
         self.renderer.draw_string(
             start,
@@ -1187,8 +1189,10 @@ impl Display {
         }
 
         // Add underline for preedit text.
-        let underline = RenderLine { start, end, color: fg };
-        rects.extend(underline.rects(Flags::UNDERLINE, &metrics, &self.size_info));
+        if preedit_colors.underline {
+            let underline = RenderLine { start, end, color: fg };
+            rects.extend(underline.rects(Flags::UNDERLINE, &metrics, &self.size_info));
+        }
 
         let ime_popup_point = match preedit.cursor_end_offset {
             Some(cursor_end_offset) => {

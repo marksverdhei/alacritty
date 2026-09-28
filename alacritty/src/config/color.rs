@@ -18,6 +18,7 @@ pub struct Colors {
     pub search: SearchColors,
     pub line_indicator: LineIndicatorColors,
     pub hints: HintColors,
+    pub preedit: PreeditColors,
     pub transparent_background_colors: bool,
     pub draw_bold_text_with_bright_colors: bool,
     footer_bar: BarColors,
@@ -30,6 +31,21 @@ impl Colors {
 
     pub fn footer_bar_background(&self) -> Rgb {
         self.footer_bar.background.unwrap_or(self.primary.foreground)
+    }
+}
+
+/// Styling for input method preedit (uncommitted IME text drawn at the cursor).
+#[derive(ConfigDeserialize, Serialize, Copy, Clone, Debug, PartialEq, Eq)]
+pub struct PreeditColors {
+    /// Foreground of preedit text; defaults to the cell foreground.
+    pub foreground: Option<Rgb>,
+    /// Whether preedit text is underlined.
+    pub underline: bool,
+}
+
+impl Default for PreeditColors {
+    fn default() -> Self {
+        Self { foreground: None, underline: true }
     }
 }
 
