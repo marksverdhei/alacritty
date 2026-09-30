@@ -1145,19 +1145,31 @@ impl Display {
 
         let num_cols = self.size_info.columns();
 
-        // Get the visible preedit.
-        let visible_text: String = match (preedit.cursor_byte_offset, preedit.cursor_end_offset) {
-            (Some(byte_offset), Some(end_offset)) if end_offset.0 > num_cols => StrShortener::new(
-                &preedit.text[byte_offset.0..],
-                num_cols,
-                ShortenDirection::Right,
-                Some(SHORTENER),
-            ),
-            _ => {
-                StrShortener::new(&preedit.text, num_cols, ShortenDirection::Left, Some(SHORTENER))
-            },
-        }
-        .collect();
+        // Get the visible preedit, and which char of the preedit it starts at.
+        let (visible_text, first_char): (String, usize) =
+            match (preedit.cursor_byte_offset, preedit.cursor_end_offset) {
+                (Some(byte_offset), Some(end_offset)) if end_offset.0 > num_cols => (
+                    StrShortener::new(
+                        &preedit.text[byte_offset.0..],
+                        num_cols,
+                        ShortenDirection::Right,
+                        Some(SHORTENER),
+                    )
+                    .collect(),
+                    preedit.text[..byte_offset.0].chars().count(),
+                ),
+                _ => {
+                    let text: String = StrShortener::new(
+                        &preedit.text,
+                        num_cols,
+                        ShortenDirection::Left,
+                        Some(SHORTENER),
+                    )
+                    .collect();
+                    let skipped = preedit.text.chars().count().saturating_sub(text.chars().count());
+                    (text, skipped)
+                },
+            };
 
         let visible_len = visible_text.chars().count();
 
@@ -1172,14 +1184,40 @@ impl Display {
         let preedit_colors = config.colors.preedit;
         let fg = preedit_colors.foreground.unwrap_or(fg);
 
-        self.renderer.draw_string(
-            start,
-            fg,
-            bg,
-            visible_text.chars(),
-            &self.size_info,
-            glyph_cache,
-        );
+        // The IME cursor range, in preedit chars, when it has its own color.
+        let highlight = match (preedit_colors.highlight_foreground, preedit.cursor_byte_offset) {
+            (Some(color), Some((begin, end))) if begin < end => Some((
+                color,
+                preedit.text[..begin].chars().count()..preedit.text[..end].chars().count(),
+            )),
+            _ => None,
+        };
+        let color_at = |i: usize| match &highlight {
+            Some((color, range)) if range.contains(&(first_char + i)) => *color,
+            _ => fg,
+        };
+
+        // Draw runs of equally colored chars.
+        let chars: Vec<char> = visible_text.chars().collect();
+        let mut runs = Vec::new();
+        let mut run_start = 0;
+        for i in 1..=chars.len() {
+            if i == chars.len() || color_at(i) != color_at(run_start) {
+                runs.push((run_start, i, color_at(run_start)));
+                run_start = i;
+            }
+        }
+        for &(from, to, color) in &runs {
+            let point = Point::new(start.line, start.column + from);
+            self.renderer.draw_string(
+                point,
+                color,
+                bg,
+                chars[from..to].iter().copied(),
+                &self.size_info,
+                glyph_cache,
+            );
+        }
 
         // Damage preedit inside the terminal viewport.
         if point.line < self.size_info.screen_lines() {
@@ -1190,15 +1228,23 @@ impl Display {
 
         // Add underline for preedit text.
         if preedit_colors.underline {
-            let underline = RenderLine { start, end, color: fg };
-            rects.extend(underline.rects(Flags::UNDERLINE, &metrics, &self.size_info));
+            for &(from, to, color) in &runs {
+                let underline = RenderLine {
+                    start: Point::new(start.line, start.column + from),
+                    end: Point::new(start.line, start.column + to - 1),
+                    color,
+                };
+                rects.extend(underline.rects(Flags::UNDERLINE, &metrics, &self.size_info));
+            }
         }
 
         let ime_popup_point = match preedit.cursor_end_offset {
             Some(cursor_end_offset) => {
                 // Use hollow block when multiple characters are changed at once.
+                // A colored range already shows itself: keep a plain beam.
                 let (shape, width) = if let Some(width) =
                     NonZeroU32::new((cursor_end_offset.0 - cursor_end_offset.1) as u32)
+                        .filter(|_| highlight.is_none())
                 {
                     (CursorShape::HollowBlock, width)
                 } else {

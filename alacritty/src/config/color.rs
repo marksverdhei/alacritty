@@ -41,11 +41,14 @@ pub struct PreeditColors {
     pub foreground: Option<Rgb>,
     /// Whether preedit text is underlined.
     pub underline: bool,
+    /// Foreground of the range the input method highlights (its cursor
+    /// range), e.g. the settled part of a dictation preview.
+    pub highlight_foreground: Option<Rgb>,
 }
 
 impl Default for PreeditColors {
     fn default() -> Self {
-        Self { foreground: None, underline: true }
+        Self { foreground: None, underline: true, highlight_foreground: None }
     }
 }
 
