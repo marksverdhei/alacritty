@@ -201,6 +201,21 @@ impl Renderer {
         size_info: &SizeInfo,
         glyph_cache: &mut GlyphCache,
     ) {
+        self.draw_string_with_alpha(point, fg, bg, 1.0, string_chars, size_info, glyph_cache);
+    }
+
+    /// Like `draw_string`, with the background drawn at `bg_alpha`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_string_with_alpha(
+        &mut self,
+        point: Point<usize>,
+        fg: Rgb,
+        bg: Rgb,
+        bg_alpha: f32,
+        string_chars: impl Iterator<Item = char>,
+        size_info: &SizeInfo,
+        glyph_cache: &mut GlyphCache,
+    ) {
         let mut wide_char_spacer = false;
         let cells = string_chars.enumerate().filter_map(|(i, character)| {
             let flags = if wide_char_spacer {
@@ -219,7 +234,7 @@ impl Renderer {
                 character,
                 extra: None,
                 flags,
-                bg_alpha: 1.0,
+                bg_alpha,
                 fg,
                 bg,
                 underline: fg,

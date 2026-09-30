@@ -1209,10 +1209,11 @@ impl Display {
         }
         for &(from, to, color) in &runs {
             let point = Point::new(start.line, start.column + from);
-            self.renderer.draw_string(
+            self.renderer.draw_string_with_alpha(
                 point,
                 color,
                 bg,
+                if preedit_colors.background { 1.0 } else { 0.0 },
                 chars[from..to].iter().copied(),
                 &self.size_info,
                 glyph_cache,
