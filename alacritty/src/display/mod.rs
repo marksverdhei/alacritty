@@ -1334,7 +1334,8 @@ impl Display {
                 &self.size_info,
                 &mut self.glyph_cache,
             );
-            if preedit_colors.underline {
+            // Indentation is not text: leave it without underline.
+            if preedit_colors.underline && layout.covers(point) {
                 let width = character.width().unwrap_or(1).max(1);
                 let end = Point::new(point.line, point.column + width - 1);
                 let underline = RenderLine { start: point, end, color };
