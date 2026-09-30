@@ -5,7 +5,8 @@ use std::cmp;
 use std::fmt::{self, Formatter};
 use std::mem::{self, ManuallyDrop};
 use std::num::NonZeroU32;
-use std::ops::Deref;
+use std::iter;
+use std::ops::{Deref, Range};
 use std::time::{Duration, Instant};
 
 use glutin::config::GetGlConfig;
@@ -830,6 +831,25 @@ impl Display {
         let vi_cursor_viewport_point =
             vi_cursor_point.and_then(|cursor| term::point_to_viewport(display_offset, cursor));
         self.damage_tracker.damage_vi_cursor(vi_cursor_viewport_point);
+
+        // Lay out a preedit that wraps onto several rows, and hide the grid under it.
+        let preedit_layout = if config.colors.preedit.wrap
+            && self.ime.is_enabled()
+            && search_state.regex().is_none()
+        {
+            let anchor = vi_cursor_viewport_point.or_else(|| {
+                term::point_to_viewport(display_offset, cursor_point)
+                    .filter(|point| point.line < size_info.screen_lines())
+            });
+            anchor.zip(self.ime.preedit()).and_then(|(anchor, preedit)| {
+                wrap_preedit(&preedit.text, anchor, size_info.columns(), size_info.screen_lines())
+            })
+        } else {
+            None
+        };
+        if let Some(layout) = &preedit_layout {
+            grid_cells.retain(|cell| !layout.covers(cell.point));
+        }
         self.damage_tracker.damage_selection(selection_range, display_offset);
 
         // Make sure this window's OpenGL context is active.
@@ -957,7 +977,7 @@ impl Display {
                     (foreground_color, background_color)
                 };
 
-                self.draw_ime_preview(point, fg, bg, &mut rects, config);
+                self.draw_ime_preview(point, fg, bg, &mut rects, config, preedit_layout.as_ref());
             }
         }
 
@@ -1133,6 +1153,7 @@ impl Display {
         bg: Rgb,
         rects: &mut Vec<RenderRect>,
         config: &UiConfig,
+        layout: Option<&PreeditLayout>,
     ) {
         let preedit = match self.ime.preedit() {
             Some(preedit) => preedit,
@@ -1142,6 +1163,22 @@ impl Display {
                 return;
             },
         };
+
+        if let Some(layout) = layout {
+            let highlight_color = config.colors.preedit.highlight_foreground;
+            let highlight = match (highlight_color, preedit.cursor_byte_offset) {
+                (Some(color), Some((begin, end))) if begin < end => Some((
+                    color,
+                    preedit.text[..begin].chars().count()..preedit.text[..end].chars().count(),
+                )),
+                _ => None,
+            };
+            let cursor = preedit
+                .cursor_byte_offset
+                .map(|(begin, _)| preedit.text[..begin].chars().count());
+            self.draw_wrapped_preedit(layout, highlight, cursor, fg, bg, rects, config);
+            return;
+        }
 
         let num_cols = self.size_info.columns();
 
@@ -1264,6 +1301,73 @@ impl Display {
         };
 
         self.window.update_ime_position(ime_popup_point, &self.size_info);
+    }
+
+    /// Draw a preedit laid out over several rows by [`wrap_preedit`].
+    #[allow(clippy::too_many_arguments)]
+    fn draw_wrapped_preedit(
+        &mut self,
+        layout: &PreeditLayout,
+        highlight: Option<(Rgb, Range<usize>)>,
+        cursor: Option<usize>,
+        fg: Rgb,
+        bg: Rgb,
+        rects: &mut Vec<RenderRect>,
+        config: &UiConfig,
+    ) {
+        let preedit_colors = config.colors.preedit;
+        let fg = preedit_colors.foreground.unwrap_or(fg);
+        let bg_alpha = if preedit_colors.background { 1.0 } else { 0.0 };
+        let metrics = self.glyph_cache.font_metrics();
+
+        for &(point, character, index) in &layout.cells {
+            let color = match &highlight {
+                Some((color, range)) if range.contains(&index) => *color,
+                _ => fg,
+            };
+            self.renderer.draw_string_with_alpha(
+                point,
+                color,
+                bg,
+                bg_alpha,
+                iter::once(character),
+                &self.size_info,
+                &mut self.glyph_cache,
+            );
+            if preedit_colors.underline {
+                let width = character.width().unwrap_or(1).max(1);
+                let end = Point::new(point.line, point.column + width - 1);
+                let underline = RenderLine { start: point, end, color };
+                rects.extend(underline.rects(Flags::UNDERLINE, &metrics, &self.size_info));
+            }
+        }
+
+        // The hidden grid rows must be redrawn once the preedit changes.
+        let num_cols = self.size_info.columns();
+        for (line, _) in &layout.spans {
+            let damage = LineDamageBounds::new(*line, 0, num_cols);
+            self.damage_tracker.frame().damage_line(damage);
+            self.damage_tracker.next_frame().damage_line(damage);
+        }
+
+        // A beam where the input method puts its cursor.
+        let cursor_point = cursor.map(|cursor| {
+            layout
+                .cells
+                .iter()
+                .find(|(_, _, index)| *index >= cursor)
+                .or(layout.cells.last())
+                .map_or(Point::new(0, Column(0)), |(point, ..)| *point)
+        });
+        if let Some(point) = cursor_point {
+            let width = NonZeroU32::new(1).unwrap();
+            let beam = RenderableCursor::new(point, CursorShape::Beam, fg, width);
+            rects.extend(beam.rects(&self.size_info, config.cursor.thickness()));
+        }
+        let popup_point = cursor_point.or(layout.cells.first().map(|(point, ..)| *point));
+        if let Some(point) = popup_point {
+            self.window.update_ime_position(point, &self.size_info);
+        }
     }
 
     /// Format search regex to account for the cursor and fullwidth characters.
@@ -1559,6 +1663,85 @@ impl Ime {
     }
 }
 
+/// A preedit wrapped onto several rows.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct PreeditLayout {
+    /// Each drawn char: its viewport cell and its char index in the preedit.
+    cells: Vec<(Point<usize>, char, usize)>,
+    /// Per covered row, the columns whose grid cells are hidden.
+    spans: Vec<(usize, Range<usize>)>,
+}
+
+impl PreeditLayout {
+    fn covers(&self, point: Point<usize>) -> bool {
+        self.spans
+            .iter()
+            .any(|(line, columns)| *line == point.line && columns.contains(&point.column.0))
+    }
+}
+
+/// Lay out a preedit starting at `anchor`, wrapping at the window edge and at
+/// newlines. Returns `None` when it fits on the anchor row.
+///
+/// A preedit taller than the rows below the anchor is lifted to end on the
+/// bottom row; one taller than the screen keeps its newest rows. Leading
+/// spaces on a row are not drawn and hide nothing, so an input method can
+/// indent rows into a sub-region of the window, such as a tmux pane.
+fn wrap_preedit(
+    text: &str,
+    anchor: Point<usize>,
+    columns: usize,
+    lines: usize,
+) -> Option<PreeditLayout> {
+    if columns == 0 || lines == 0 || anchor.column.0 >= columns {
+        return None;
+    }
+
+    let mut placed = Vec::new();
+    let (mut row, mut column): (usize, usize) = (0, anchor.column.0);
+    for (index, character) in text.chars().enumerate() {
+        if character == '\n' {
+            row += 1;
+            column = 0;
+            continue;
+        }
+        let width = match character.width() {
+            Some(width) if width > 0 => width,
+            _ => continue,
+        };
+        if column + width > columns {
+            row += 1;
+            column = 0;
+        }
+        placed.push((row, column, character, index));
+        column += width;
+    }
+    if row == 0 {
+        return None;
+    }
+
+    let rows = row + 1;
+    let skip = rows.saturating_sub(lines);
+    let top = anchor.line.min(lines - (rows - skip));
+
+    let mut layout = PreeditLayout::default();
+    for (row, column, character, index) in placed {
+        if row < skip {
+            continue;
+        }
+        let line = top + row - skip;
+        let end = column + character.width().unwrap_or(1);
+        if !character.is_whitespace() {
+            match layout.spans.last_mut() {
+                Some((last, columns)) if *last == line => columns.end = end,
+                _ => layout.spans.push((line, column..end)),
+            }
+        }
+        layout.cells.push((Point::new(line, Column(column)), character, index));
+    }
+    Some(layout)
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Preedit {
     /// The preedit text.
@@ -1682,4 +1865,56 @@ fn window_size(
     let height = (padding.1).mul_add(2., grid_height).floor();
 
     PhysicalSize::new(width as u32, height as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows(layout: &PreeditLayout) -> Vec<(usize, usize, String)> {
+        let mut rows: Vec<(usize, usize, String)> = Vec::new();
+        for (point, character, _) in &layout.cells {
+            match rows.last_mut() {
+                Some((line, _, text)) if *line == point.line => text.push(*character),
+                _ => rows.push((point.line, point.column.0, character.to_string())),
+            }
+        }
+        rows
+    }
+
+    #[test]
+    fn preedit_fitting_the_row_is_not_wrapped() {
+        assert_eq!(wrap_preedit("hello", Point::new(2, Column(5)), 10, 5), None);
+    }
+
+    #[test]
+    fn preedit_wraps_at_the_edge_and_at_newlines() {
+        let layout = wrap_preedit("abcdefg\n  hi", Point::new(1, Column(6)), 10, 5).unwrap();
+        assert_eq!(rows(&layout), [
+            (1, 6, "abcd".into()),
+            (2, 0, "efg".into()),
+            (3, 0, "  hi".into())
+        ]);
+        // Leading spaces hide nothing; the text itself does.
+        assert_eq!(layout.spans, [(1, 6..10), (2, 0..3), (3, 2..4)]);
+        assert!(layout.covers(Point::new(3, Column(3))));
+        assert!(!layout.covers(Point::new(3, Column(1))));
+        // Char indices count the newline, so highlight ranges stay aligned.
+        assert_eq!(layout.cells.last().unwrap().2, 11);
+    }
+
+    #[test]
+    fn preedit_is_lifted_off_the_bottom_and_keeps_newest_rows() {
+        let layout = wrap_preedit("a\nb\nc", Point::new(4, Column(0)), 10, 5).unwrap();
+        assert_eq!(rows(&layout), [(2, 0, "a".into()), (3, 0, "b".into()), (4, 0, "c".into())]);
+
+        let layout = wrap_preedit("a\nb\nc", Point::new(0, Column(0)), 10, 2).unwrap();
+        assert_eq!(rows(&layout), [(0, 0, "b".into()), (1, 0, "c".into())]);
+    }
+
+    #[test]
+    fn wide_chars_wrap_whole() {
+        let layout = wrap_preedit("你好", Point::new(0, Column(2)), 5, 3).unwrap();
+        assert_eq!(rows(&layout), [(0, 2, "你".into()), (1, 0, "好".into())]);
+    }
 }

@@ -47,11 +47,21 @@ pub struct PreeditColors {
     /// Whether preedit text gets a solid background; without it the text
     /// is drawn straight over the terminal.
     pub background: bool,
+    /// Whether preedit text too long for the cursor line wraps onto the
+    /// rows below instead of being cut off. Newlines in the preedit start a
+    /// new row, and the terminal contents under wrapped text are hidden.
+    pub wrap: bool,
 }
 
 impl Default for PreeditColors {
     fn default() -> Self {
-        Self { foreground: None, underline: true, highlight_foreground: None, background: true }
+        Self {
+            foreground: None,
+            underline: true,
+            highlight_foreground: None,
+            background: true,
+            wrap: false,
+        }
     }
 }
 
